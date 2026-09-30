@@ -52,6 +52,57 @@ export type MarketplaceQuery = {
   pageSize?: number;
 };
 
+export type ShopStatus =
+  | "application_submitted"
+  | "application_rejected"
+  | "setup_access_granted"
+  | "active"
+  | "deactivated";
+
+// SCR-ADM-001
+export type AdminDashboard = {
+  asAt: string;
+  applicationsAwaitingReview: number;
+  shopsInSetup: number;
+  activeShops: number;
+  deactivatedShops: number;
+  liveFixedPriceListings: number;
+  liveAuctions: number;
+  liveAuctionsWithBids: number;
+  itemsReadyToList: number;
+  itemsPastReadyToListEscalation: number;
+  feesOutstandingMinor: number;
+  feesOverdueMinor: number;
+  shopsWithOverdueFees: number;
+};
+
+// SCR-ADM-004
+export type AdminShop = {
+  id: string;
+  reference: string;
+  tradingName: string;
+  legalEntityName: string | null;
+  status: ShopStatus;
+  createdAt: string;
+  setupAccessGrantedAt: string | null;
+  activatedAt: string | null;
+  deactivatedAt: string | null;
+  deactivationReason: string | null;
+  reactivatedAt: string | null;
+  liveListingCount: number;
+  feesOutstandingMinor: number;
+  feesOverdueMinor: number;
+  hasOverdueFees: boolean;
+};
+
+export type AdminShopQuery = {
+  query?: string;
+  status?: ShopStatus | "";
+  overdueOnly?: boolean;
+  page?: number;
+  pageSize?: number;
+};
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -132,6 +183,20 @@ export const api = {
       ),
 
     themes: () => request<ClassificationOption[]>("/api/marketplace/classifications/themes"),
+  },
+
+  // platform admin only. no sign-in exists yet, so these return 401 until the
+  // admin login is wired to issue a token
+  admin: {
+    dashboard: () => request<AdminDashboard>("/api/admin/dashboard", { cache: "no-store" }),
+
+    shops: (query: AdminShopQuery = {}) =>
+      request<PagedResult<AdminShop>>(`/api/admin/shops${toQueryString(query)}`, {
+        cache: "no-store",
+      }),
+
+    shop: (shopId: string) =>
+      request<AdminShop>(`/api/admin/shops/${shopId}`, { cache: "no-store" }),
   },
 };
 

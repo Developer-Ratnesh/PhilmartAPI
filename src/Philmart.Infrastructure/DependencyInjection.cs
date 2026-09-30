@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Philmart.Application.Admin;
 using Philmart.Application.Items;
 using Philmart.Application.Marketplace;
 using Philmart.Domain.Abstractions;
@@ -43,6 +44,7 @@ public static class DependencyInjection
         services.AddScoped<IAuditWriter, AuditWriter>();
         services.AddScoped<IItemService, ItemService>();
         services.AddScoped<IMarketplaceService, MarketplaceService>();
+        services.AddScoped<IAdminOversightService, AdminOversightService>();
 
         return services;
     }
