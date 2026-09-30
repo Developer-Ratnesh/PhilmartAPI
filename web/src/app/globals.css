@@ -1,0 +1,216 @@
+@import "tailwindcss";
+
+/*
+  PHILMART design tokens.
+
+  Derived from the controlled screen evidence in the D076 pack — SCR-PUB-001
+  (Public Buyer Home), SCR-PUB-002A (Marketplace Grid) and SCR-SHP-002 (Shop
+  Dashboard). The palette is deep navy with a gold accent, serif display type
+  over a sans body, and warm ivory cards on the public marketplace against a
+  cool grey workspace on the Shop side.
+
+  Every colour is declared as a token here and redefined for dark mode. Nothing
+  downstream hard-codes a hex value.
+*/
+
+@theme {
+  --font-display: var(--font-philmart-display), Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-philmart-sans), system-ui, -apple-system, sans-serif;
+
+  --radius-card: 0.5rem;
+  --radius-badge: 0.25rem;
+}
+
+:root {
+  /* Brand ------------------------------------------------------------- */
+  --philmart-navy: #10294f;
+  --philmart-navy-deep: #0b1e3d;
+  --philmart-navy-soft: #1c3c6b;
+  --philmart-gold: #d9a227;
+  --philmart-gold-deep: #b8851a;
+
+  /* Surfaces ---------------------------------------------------------- */
+  --surface-page: #f5f7fa;          /* Shop workspace background */
+  --surface-marketplace: #faf8f2;   /* warm ivory, public marketplace */
+  --surface-card: #ffffff;
+  --surface-card-warm: #fdfcf7;     /* marketplace item cards */
+  --surface-raised: #ffffff;
+  --surface-sunken: #eef1f6;
+  --surface-inverse: var(--philmart-navy);
+
+  /* Text -------------------------------------------------------------- */
+  --text-primary: #10294f;
+  --text-secondary: #46536b;
+  --text-muted: #6b7789;
+  --text-inverse: #ffffff;
+  --text-on-gold: #10294f;
+
+  /* Lines ------------------------------------------------------------- */
+  --border-subtle: #e2e7ef;
+  --border-default: #cfd7e3;
+  --border-strong: #9aa7bd;
+
+  /* Semantic. Each is used for one meaning only, per the evidence. ----- */
+  --accent-live: #1e7a46;           /* LIVE pill, Recently Listed */
+  --accent-live-bg: #eaf5ef;
+  --accent-scheduled: #c8901f;      /* SCHEDULED pill */
+  --accent-scheduled-bg: #fdf6e7;
+  --accent-auction: #6b2fa0;        /* auction accents, Ending Soon */
+  --accent-auction-bg: #f3eefa;
+  --accent-attention: #c2410c;      /* needs-attention counts */
+  --accent-attention-bg: #fef1ea;
+  --accent-info: #1d5fa8;
+  --accent-info-bg: #e9f1fa;
+  --accent-danger: #b3261e;
+  --accent-danger-bg: #fdecea;
+
+  /* Money. Fixed price reads navy; a live bid reads gold. -------------- */
+  --price-fixed: #10294f;
+  --price-bid: #b8851a;
+
+  --shadow-card: 0 1px 2px rgb(16 41 79 / 0.06), 0 1px 3px rgb(16 41 79 / 0.04);
+  --shadow-raised: 0 4px 12px rgb(16 41 79 / 0.08);
+}
+
+/*
+  Dark mode. Follows the system unless the user has chosen a theme, in which
+  case [data-theme] on <html> wins. The guard on :root:not([data-theme="light"])
+  is what lets an explicit light choice survive a dark OS setting.
+*/
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --philmart-navy: #8fb2e0;
+    --philmart-navy-deep: #060d1a;
+    --philmart-navy-soft: #16294a;
+    --philmart-gold: #e8b944;
+    --philmart-gold-deep: #c9992c;
+
+    --surface-page: #0b1220;
+    --surface-marketplace: #0e1626;
+    --surface-card: #141d2e;
+    --surface-card-warm: #16202f;
+    --surface-raised: #1a2437;
+    --surface-sunken: #090f1b;
+    --surface-inverse: #060d1a;
+
+    --text-primary: #e8edf6;
+    --text-secondary: #a9b5c9;
+    --text-muted: #7d8aa0;
+    --text-inverse: #0b1220;
+    --text-on-gold: #10294f;
+
+    --border-subtle: #222e45;
+    --border-default: #2e3c57;
+    --border-strong: #46577a;
+
+    --accent-live: #4ade80;
+    --accent-live-bg: #10291c;
+    --accent-scheduled: #e8b944;
+    --accent-scheduled-bg: #2a2210;
+    --accent-auction: #b78bea;
+    --accent-auction-bg: #241a33;
+    --accent-attention: #fb923c;
+    --accent-attention-bg: #2e1a0f;
+    --accent-info: #60a5fa;
+    --accent-info-bg: #12233a;
+    --accent-danger: #f87171;
+    --accent-danger-bg: #2e1414;
+
+    --price-fixed: #e8edf6;
+    --price-bid: #e8b944;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.3);
+    --shadow-raised: 0 4px 16px rgb(0 0 0 / 0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  --philmart-navy: #8fb2e0;
+  --philmart-navy-deep: #060d1a;
+  --philmart-navy-soft: #16294a;
+  --philmart-gold: #e8b944;
+  --philmart-gold-deep: #c9992c;
+
+  --surface-page: #0b1220;
+  --surface-marketplace: #0e1626;
+  --surface-card: #141d2e;
+  --surface-card-warm: #16202f;
+  --surface-raised: #1a2437;
+  --surface-sunken: #090f1b;
+  --surface-inverse: #060d1a;
+
+  --text-primary: #e8edf6;
+  --text-secondary: #a9b5c9;
+  --text-muted: #7d8aa0;
+  --text-inverse: #0b1220;
+  --text-on-gold: #10294f;
+
+  --border-subtle: #222e45;
+  --border-default: #2e3c57;
+  --border-strong: #46577a;
+
+  --accent-live: #4ade80;
+  --accent-live-bg: #10291c;
+  --accent-scheduled: #e8b944;
+  --accent-scheduled-bg: #2a2210;
+  --accent-auction: #b78bea;
+  --accent-auction-bg: #241a33;
+  --accent-attention: #fb923c;
+  --accent-attention-bg: #2e1a0f;
+  --accent-info: #60a5fa;
+  --accent-info-bg: #12233a;
+  --accent-danger: #f87171;
+  --accent-danger-bg: #2e1414;
+
+  --price-fixed: #e8edf6;
+  --price-bid: #e8b944;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.3);
+  --shadow-raised: 0 4px 16px rgb(0 0 0 / 0.5);
+}
+
+html {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] html,
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    color-scheme: dark;
+  }
+}
+
+body {
+  background-color: var(--surface-page);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Display type. The evidence uses a serif for headings throughout. */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+/* Respect a reduced-motion preference for the countdown and skeletons. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Keyboard focus must stay visible against both themes. */
+:focus-visible {
+  outline: 2px solid var(--philmart-gold);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
