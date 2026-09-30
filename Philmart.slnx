@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Philmart.Api/Philmart.Api.csproj" />
+    <Project Path="src/Philmart.Application/Philmart.Application.csproj" />
+    <Project Path="src/Philmart.Domain/Philmart.Domain.csproj" />
+    <Project Path="src/Philmart.Infrastructure/Philmart.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Philmart.IntegrationTests/Philmart.IntegrationTests.csproj" />
+    <Project Path="tests/Philmart.UnitTests/Philmart.UnitTests.csproj" />
+  </Folder>
+</Solution>

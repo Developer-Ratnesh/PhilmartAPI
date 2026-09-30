@@ -1,0 +1,12 @@
+bin/
+obj/
+*.user
+.vs/
+node_modules/
+.next/
+out/
+.env.local
+Logs/
+
+# Next.js frontend is a separate repository
+web/

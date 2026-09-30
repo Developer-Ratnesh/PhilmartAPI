@@ -1,0 +1,64 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{A1A94491-9C60-438D-9EFC-EEAF8B8D2F21}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Philmart.Domain", "src\Philmart.Domain\Philmart.Domain.csproj", "{0072EE6C-D05A-49D1-AAEE-954DAC4225C4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Philmart.Application", "src\Philmart.Application\Philmart.Application.csproj", "{7D3A818F-2D44-4314-A47B-F34793FD7F71}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Philmart.Infrastructure", "src\Philmart.Infrastructure\Philmart.Infrastructure.csproj", "{809B3C80-CA26-40F4-BA67-7ACB3E58154D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Philmart.Api", "src\Philmart.Api\Philmart.Api.csproj", "{55359DAB-FE1A-439D-B77B-B914A7E2F2E4}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{31B43732-1C1F-447F-8618-508E63ED68A1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Philmart.UnitTests", "tests\Philmart.UnitTests\Philmart.UnitTests.csproj", "{76C17462-7340-4E55-A1A6-CD87F4C0B328}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Philmart.IntegrationTests", "tests\Philmart.IntegrationTests\Philmart.IntegrationTests.csproj", "{D3A723F0-58B8-4524-8264-2A53A8A2B9A7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{0072EE6C-D05A-49D1-AAEE-954DAC4225C4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0072EE6C-D05A-49D1-AAEE-954DAC4225C4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0072EE6C-D05A-49D1-AAEE-954DAC4225C4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0072EE6C-D05A-49D1-AAEE-954DAC4225C4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7D3A818F-2D44-4314-A47B-F34793FD7F71}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7D3A818F-2D44-4314-A47B-F34793FD7F71}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7D3A818F-2D44-4314-A47B-F34793FD7F71}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7D3A818F-2D44-4314-A47B-F34793FD7F71}.Release|Any CPU.Build.0 = Release|Any CPU
+		{809B3C80-CA26-40F4-BA67-7ACB3E58154D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{809B3C80-CA26-40F4-BA67-7ACB3E58154D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{809B3C80-CA26-40F4-BA67-7ACB3E58154D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{809B3C80-CA26-40F4-BA67-7ACB3E58154D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{55359DAB-FE1A-439D-B77B-B914A7E2F2E4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{55359DAB-FE1A-439D-B77B-B914A7E2F2E4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{55359DAB-FE1A-439D-B77B-B914A7E2F2E4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{55359DAB-FE1A-439D-B77B-B914A7E2F2E4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{76C17462-7340-4E55-A1A6-CD87F4C0B328}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{76C17462-7340-4E55-A1A6-CD87F4C0B328}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{76C17462-7340-4E55-A1A6-CD87F4C0B328}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{76C17462-7340-4E55-A1A6-CD87F4C0B328}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D3A723F0-58B8-4524-8264-2A53A8A2B9A7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D3A723F0-58B8-4524-8264-2A53A8A2B9A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D3A723F0-58B8-4524-8264-2A53A8A2B9A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D3A723F0-58B8-4524-8264-2A53A8A2B9A7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{0072EE6C-D05A-49D1-AAEE-954DAC4225C4} = {A1A94491-9C60-438D-9EFC-EEAF8B8D2F21}
+		{7D3A818F-2D44-4314-A47B-F34793FD7F71} = {A1A94491-9C60-438D-9EFC-EEAF8B8D2F21}
+		{809B3C80-CA26-40F4-BA67-7ACB3E58154D} = {A1A94491-9C60-438D-9EFC-EEAF8B8D2F21}
+		{55359DAB-FE1A-439D-B77B-B914A7E2F2E4} = {A1A94491-9C60-438D-9EFC-EEAF8B8D2F21}
+		{76C17462-7340-4E55-A1A6-CD87F4C0B328} = {31B43732-1C1F-447F-8618-508E63ED68A1}
+		{D3A723F0-58B8-4524-8264-2A53A8A2B9A7} = {31B43732-1C1F-447F-8618-508E63ED68A1}
+	EndGlobalSection
+EndGlobal
