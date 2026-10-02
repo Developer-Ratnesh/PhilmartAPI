@@ -1,0 +1,5 @@
+# Controlled database files are stored byte for byte as issued. Line-ending
+# conversion would change their SHA-256, which migrate.sh records and checks.
+database/** -text
+# Shell scripts must keep LF to run on the Linux CI runners.
+*.sh text eol=lf

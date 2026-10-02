@@ -1,0 +1,117 @@
+# Quality gates (Delivery Plan task T04). Every push and pull request must pass
+# all three jobs before it can merge to main. See docs/milestone-1/T04_development_and_test_approach.md.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  database:
+    name: Database migrations
+    runs-on: ubuntu-24.04
+    services:
+      sql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: Philmart_CI_only_1!
+        ports: ["1433:1433"]
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1'"
+          --health-interval 10s --health-timeout 5s --health-retries 12
+    env:
+      PHILMART_SQL_SERVER: localhost
+      PHILMART_SQL_DATABASE: Philmart
+      PHILMART_SQL_USER: sa
+      PHILMART_SQL_PASSWORD: Philmart_CI_only_1!
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install sqlcmd
+        run: |
+          if ! command -v sqlcmd >/dev/null; then
+            curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc >/dev/null
+            curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list >/dev/null
+            sudo apt-get update
+            sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
+            echo /opt/mssql-tools18/bin >> "$GITHUB_PATH"
+          fi
+      - name: Apply all migrations to an empty database
+        run: ./database/migrate.sh | tee migrate.log
+      - name: Seed verified itself
+        run: |
+          grep -q "PHILMART 010_seed: controlled reference seed loaded and verified." migrate.log
+      - name: Re-run applies nothing
+        run: |
+          ./database/migrate.sh | grep -q "Done: 0 migration(s) applied"
+
+  api:
+    name: API build and tests
+    runs-on: ubuntu-24.04
+    services:
+      sql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: Philmart_CI_only_1!
+        ports: ["1433:1433"]
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1'"
+          --health-interval 10s --health-timeout 5s --health-retries 12
+    env:
+      PHILMART_SQL_SERVER: localhost
+      PHILMART_SQL_DATABASE: PhilmartTest
+      PHILMART_SQL_USER: sa
+      PHILMART_SQL_PASSWORD: Philmart_CI_only_1!
+      PHILMART_TEST_CONNECTION: Server=localhost;Database=PhilmartTest;User Id=sa;Password=Philmart_CI_only_1!;TrustServerCertificate=True
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install sqlcmd
+        run: |
+          if ! command -v sqlcmd >/dev/null; then
+            curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc >/dev/null
+            curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list >/dev/null
+            sudo apt-get update
+            sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
+            echo /opt/mssql-tools18/bin >> "$GITHUB_PATH"
+          fi
+      - run: dotnet restore Philmart.sln
+      - run: dotnet build Philmart.sln --no-restore -c Release
+      - name: Unit tests
+        run: dotnet test tests/Philmart.UnitTests --no-build -c Release --logger "trx;LogFileName=unit.trx" --results-directory test-results
+      - name: Migrate test database
+        run: ./database/migrate.sh
+      - name: Integration tests
+        run: dotnet test tests/Philmart.IntegrationTests --no-build -c Release --logger "trx;LogFileName=integration.trx" --results-directory test-results
+      - name: Keep test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-results
+          path: test-results
+
+  web:
+    name: Frontend lint, types and build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm run build

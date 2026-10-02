@@ -14,7 +14,7 @@ Decision Register **D001–D076** and the naming standard in
 │   └── Philmart.Api/             ASP.NET Core Web API. Composition root.
 ├── tests/
 │   ├── Philmart.UnitTests/       Domain rules, no database.
-│   └── Philmart.IntegrationTests/ Real SQL Server via Testcontainers.
+│   └── Philmart.IntegrationTests/ Real SQL Server, migrated by database/migrate.sh.
 ├── tools/scaffold.ps1            Regenerates the EF model from the database.
 └── web/                          Next.js 16 App Router, TypeScript, Tailwind 4.
 ```
@@ -26,9 +26,9 @@ that knows both exist.
 ## Running it
 
 ```bash
-# 1. Create the database and apply the schema (sqlcmd honours the GO separators)
-sqlcmd -S localhost -d Philmart -i ../02_Database/migrations/001_foundation.sql
-#    ...through 009_enforcement.sql, in order.
+# 1. Create the database and apply all migrations, including the seed
+#    (needs sqlcmd; see database/migrate.sh for the environment variables)
+./database/migrate.sh
 
 # 2. API
 dotnet user-secrets set "ConnectionStrings:Philmart" "<connection string>" \
@@ -73,7 +73,7 @@ scaffolded *from* the database:
 ```
 
 Schema changes are made by adding a numbered file under
-`../02_Database/migrations` and re-running that. Never call `EnsureCreated`.
+`database/migrations` and re-running that. Never call `EnsureCreated`.
 
 `Philmart.Domain.Rules.ItemStateMachine` deliberately mirrors
 `philmart.Item_TransitionRule` so the rule is unit-testable without a database.
