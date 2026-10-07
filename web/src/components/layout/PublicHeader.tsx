@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useTheme } from "@/lib/theme";
+import { clearSession, useSession } from "@/lib/session";
 
 function Logo() {
   return (
@@ -113,13 +114,7 @@ export function PublicHeader() {
 
           <ThemeToggle />
 
-          <Link
-            href="/login"
-            className="text-sm font-medium"
-            style={{ color: "var(--text-primary)" }}
-          >
-            Login
-          </Link>
+          <AccountLink />
         </nav>
       </div>
     </header>
@@ -155,5 +150,31 @@ export function PublicFooter({ screenId }: { screenId?: string }) {
         </div>
       </div>
     </footer>
+  );
+}
+
+function AccountLink() {
+  const session = useSession();
+
+  if (!session) {
+    return (
+      <Link href="/login" className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+        Login
+      </Link>
+    );
+  }
+
+  const user = session.user;
+  const home = user.actorKind === "Shop_User" ? "/workspace" : user.actorKind === "platform_admin" ? "/admin" : user.registrationStep !== null ? "/register" : "/account/saved";
+
+  return (
+    <span className="flex items-center gap-3 text-sm">
+      <Link href={home} className="font-medium" style={{ color: "var(--text-primary)" }}>
+        {user.fullName ?? user.email}
+      </Link>
+      <button type="button" className="text-xs hover:underline" style={{ color: "var(--text-muted)" }} onClick={() => clearSession()}>
+        Sign out
+      </button>
+    </span>
   );
 }

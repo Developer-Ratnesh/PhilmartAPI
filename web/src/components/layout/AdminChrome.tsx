@@ -1,9 +1,7 @@
 import type { ReactNode } from "react";
 import { Lockup } from "@/components/brand/Lockup";
 
-// Admin chrome from SCR-ADM-001. Deeper navy than the public shell, no
-// marketplace nav and no trust strip. BRAND-SHELL-001 treats the header, logo
-// and footer as shared components, so every ADM screen uses these two.
+// Admin header and footer (SCR-ADM-001), shared by every admin screen.
 
 export function AdminTopBar({ user }: { user?: { name: string } }) {
   return (

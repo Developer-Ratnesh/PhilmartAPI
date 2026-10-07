@@ -20,9 +20,7 @@ export default function MarketplacePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Bumping this refetches without changing the filter, which is what the
-  // retry button does. The skeleton is turned on from the handlers rather than
-  // from the effect, so the effect never sets state on its way in.
+  // bumping this refetches with the same filter, the retry button uses it
   const [attempt, setAttempt] = useState(0);
   const reload = useCallback(() => {
     setLoading(true);
@@ -32,8 +30,7 @@ export default function MarketplacePage() {
   useEffect(() => {
     let cancelled = false;
 
-    // State only moves in the promise callbacks. Setting it straight from the
-    // effect body is a cascading render and React 19 rejects it.
+    // only set state in the callbacks, React 19 complains if the effect sets it directly
     api.marketplace
       .browse(filter)
       .then((res) => {

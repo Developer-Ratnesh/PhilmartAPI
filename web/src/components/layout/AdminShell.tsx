@@ -4,9 +4,8 @@ import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { AdminChrome } from "@/components/layout/AdminChrome";
 
-// Signed-in admin layout: the SCR-ADM chrome plus the section nav. Only built
-// sections are listed so there are no dead links. Add the rest of BR-21/22/23
-// here as they land.
+// Admin layout with the section menu. Only built sections are listed, add the
+// rest here as they're done.
 const NAV = [
   { href: "/admin", label: "Dashboard" },
   { href: "/admin/shops", label: "Shops" },

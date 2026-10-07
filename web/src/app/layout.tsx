@@ -34,6 +34,8 @@ export default function RootLayout({
     <html lang="en-ZA" className={`${display.variable} ${sans.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src="/config.js" />
       </head>
       <body className="min-h-screen">
         <ThemeProvider>{children}</ThemeProvider>

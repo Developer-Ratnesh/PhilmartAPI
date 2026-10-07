@@ -8,3 +8,5 @@ out/
 .env.local
 Logs/
 
+.build/
+tests/bin-verify/

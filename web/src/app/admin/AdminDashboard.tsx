@@ -5,8 +5,7 @@ import { Card, StatTile } from "@/components/ui/Card";
 import { api, formatMoney, type AdminDashboard as Dashboard } from "@/lib/api";
 import { adminErrorMessage } from "@/lib/admin";
 
-// BR-21-R01 current overview. Historical trends are the second state of
-// SCR-ADM-001 and come with the reporting work.
+// BR-21-R01 overview. The history view comes later with reports.
 export function AdminDashboard() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -1,8 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
-// BRAND-SHELL-001 locks this asset: "Use this exact asset on future screens;
-// do not redraw or regenerate." So it's the PNG, not type and a drawn stamp.
+// The brand rules say use this exact image and never redraw it (BRAND-SHELL-001).
 const LOCKUP = "/brand/philmart-lockup.png";
 
 // Asset is 2172x724. Heights below keep that ratio so nothing squashes.

@@ -40,8 +40,12 @@ cd web && npm run dev                        # http://localhost:3000
 ```
 
 The API connection string must use a login mapped to the **`philmart_app`**
-database role. Not `db_owner`, not `sysadmin` — Row Level Security does not
-apply to either, and the whole tenancy layer silently disappears.
+database role, never `db_owner` or `sysadmin`. Those would get past the
+schema-wide `DENY DELETE` and every grant. (Row Level Security itself still
+applies to them, we tested it, so the controlled `database/README.md` is wrong
+on that point.)
+
+Demo data, logins and what M2 covers: [docs/milestone-2](docs/milestone-2/README.md).
 
 ## Three things that are not optional
 

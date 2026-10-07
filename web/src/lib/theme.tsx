@@ -14,9 +14,8 @@ type ThemeContextValue = {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-// themeInitScript has already put the stored choice on <html> before paint, so
-// read it back from there instead of hitting localStorage again in an effect.
-// Doing it in an effect meant a setState on mount, which React 19 flags.
+// The init script already put the saved theme on <html>, so read it from there.
+// Doing it in an effect would set state on mount, which React 19 flags.
 function initialTheme(): Theme {
   if (typeof document === "undefined") {
     return "system";
