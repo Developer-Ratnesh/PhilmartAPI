@@ -1,8 +1,7 @@
 namespace Philmart.Domain.Constants;
 
-// Values from the decision register D001-D076. SQL Server has no enum type so
-// these are stored as text with a CHECK constraint. Add a value here and you
-// must add it to the CHECK and to Sys_EnumValue too.
+// Values from the decision register, stored as text with a CHECK constraint.
+// If you add one here, add it to the CHECK and to Sys_EnumValue too.
 public static class PhilmartConstants
 {
     public static class ItemState
@@ -86,18 +85,20 @@ public static class PhilmartConstants
         public const string Paid = "paid";
     }
 
+    // The schema spells these Buy_Buyer and Shop_User, and the CHECK
+    // constraints and RLS predicates compare against exactly that. Don't tidy them.
     public static class ActorKind
     {
         public const string Anonymous = "anonymous";
-        public const string Buyer = "buyer";
-        public const string ShopUser = "shop_user";
+        public const string Buyer = "Buy_Buyer";
+        public const string ShopUser = "Shop_User";
         public const string PlatformAdmin = "platform_admin";
         public const string System = "system";
     }
 
     public static class RestrictionScope
     {
-        public const string Shop = "shop";
+        public const string Shop = "Shop_Shop";   // CK_br_scope
         public const string Platform = "platform";
     }
 
@@ -148,16 +149,17 @@ public static class PhilmartConstants
         };
     }
 
+    // spelled to match CK_audit_reason_required, or the reason check won't fire
     public static class AuditAction
     {
         public const string AuctionCancelledWithBids = "auction.cancelled_with_bids";
-        public const string ItemRemovedFromStockOther = "item.removed_from_stock.other";
-        public const string BuyerRestricted = "buyer.restricted";
-        public const string ShopDeactivated = "shop.deactivated";
-        public const string ShopReactivated = "shop.reactivated";
-        public const string SellerPaymentReversed = "seller_payment.reversed";
+        public const string ItemRemovedFromStockOther = "Item_Item.removed_from_stock.other";
+        public const string BuyerRestricted = "Buy_Buyer.restricted";
+        public const string ShopDeactivated = "Shop_Shop.deactivated";
+        public const string ShopReactivated = "Shop_Shop.reactivated";
+        public const string SellerPaymentReversed = "Sell_Payment.reversed";
         public const string SellerProceedsAdjusted = "seller_proceeds.adjusted";
-        public const string InvoiceCancelled = "invoice.cancelled";
+        public const string InvoiceCancelled = "Sale_Invoice.cancelled";
         public const string FeeWaived = "fee.waived";
 
         // these always need a reason written with them

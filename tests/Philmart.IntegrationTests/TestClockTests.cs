@@ -3,31 +3,34 @@ using Philmart.IntegrationTests.Support;
 
 namespace Philmart.IntegrationTests;
 
-// T06: the harness itself, and proof that the application's IServerClock
-// follows it. If ServerClock ever stops reading philmart.ServerNow() these fail.
 [Collection("Database")]
 public class TestClockTests(DatabaseFixture database) : IAsyncLifetime
 {
-    private static readonly DateTimeOffset Morning = new(2026, 10, 1, 9, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Morning = new DateTimeOffset(2026, 10, 1, 9, 0, 0, TimeSpan.Zero);
 
-    public Task InitializeAsync() => database.Clock.Reset();
+    public Task InitializeAsync()
+    {
+        return database.Clock.Reset();
+    }
 
-    public Task DisposeAsync() => database.Clock.Reset();
+    // reset after as well, a failed test shouldn't leave the clock frozen
+    public Task DisposeAsync()
+    {
+        return database.Clock.Reset();
+    }
 
     [Fact]
-    public async Task Frozen_clock_returns_exactly_the_frozen_time()
+    public async Task Frozen_clock_stays_put()
     {
         await database.Clock.FreezeAt(Morning);
-
         Assert.Equal(Morning, await database.Clock.Now());
 
-        // frozen means frozen, not "close to"
         await Task.Delay(1100);
         Assert.Equal(Morning, await database.Clock.Now());
     }
 
     [Fact]
-    public async Task Advance_moves_a_frozen_clock_by_exactly_that_much()
+    public async Task Advance_moves_it_by_exactly_that_much()
     {
         await database.Clock.FreezeAt(Morning);
 
@@ -37,30 +40,31 @@ public class TestClockTests(DatabaseFixture database) : IAsyncLifetime
         Assert.Equal(Morning.AddDays(90).AddMinutes(2), await database.Clock.Now());
     }
 
+    // This is the one that matters. If ServerClock ever stops going through
+    // ServerNow(), none of the timing tests mean anything.
     [Fact]
-    public async Task Application_clock_reads_the_test_clock()
+    public async Task ServerClock_follows_the_test_clock()
     {
         await database.Clock.FreezeAt(Morning);
 
-        var serverClock = new ServerClock(database.ContextFactory());
+        var clock = new ServerClock(database.ContextFactory());
 
-        Assert.Equal(Morning, await serverClock.Now());
+        Assert.Equal(Morning, await clock.Now());
     }
 
     [Fact]
-    public async Task Reset_goes_back_to_real_server_time()
+    public async Task Reset_goes_back_to_real_time()
     {
-        var longAgo = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        await database.Clock.FreezeAt(longAgo);
+        await database.Clock.FreezeAt(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero));
         await database.Clock.Reset();
 
-        var now = await database.Clock.Now();
+        DateTimeOffset now = await database.Clock.Now();
 
-        Assert.True(now.Year > 2000, $"Expected real time after reset, got {now:O}");
+        Assert.True(now.Year > 2000, "still frozen after reset: " + now);
     }
 
     [Fact]
-    public async Task Clock_moves_in_whole_seconds()
+    public async Task Half_seconds_are_rejected()
     {
         await Assert.ThrowsAsync<ArgumentException>(() => database.Clock.Advance(TimeSpan.FromMilliseconds(500)));
     }

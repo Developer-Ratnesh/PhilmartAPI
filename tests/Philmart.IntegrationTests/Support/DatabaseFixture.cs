@@ -3,29 +3,44 @@ using Philmart.Infrastructure.Persistence;
 
 namespace Philmart.IntegrationTests.Support;
 
-// A migrated PHILMART database. CI starts SQL Server and runs
-// database/migrate.sh before the tests; locally, point the variable at any
-// database you have migrated the same way:
-//
-//   PHILMART_TEST_CONNECTION="Server=localhost;Database=PhilmartTest;Trusted_Connection=True;TrustServerCertificate=True"
-//
-// Never point it at a database whose data you care about: tests move the clock.
-public class DatabaseFixture
+// Needs a database that database/migrate.sh has been run on. CI sets this up.
+// Locally, set PHILMART_TEST_CONNECTION to a scratch database, not one you
+// care about. The tests move its clock.
+public class DatabaseFixture : IAsyncLifetime
 {
-    public const string ConnectionVariable = "PHILMART_TEST_CONNECTION";
-
     public DatabaseFixture()
     {
-        ConnectionString = Environment.GetEnvironmentVariable(ConnectionVariable)
-            ?? throw new InvalidOperationException(
-                $"{ConnectionVariable} is not set. Integration tests need a database migrated with database/migrate.sh.");
+        string? connectionString = Environment.GetEnvironmentVariable("PHILMART_TEST_CONNECTION");
+        if (string.IsNullOrEmpty(connectionString))
+        {
+            throw new InvalidOperationException("PHILMART_TEST_CONNECTION isn't set. Point it at a migrated test database.");
+        }
 
-        Clock = new TestClock(ConnectionString);
+        ConnectionString = connectionString;
+        Clock = new TestClock(connectionString);
+        Data = new TestData(connectionString);
+        Api = new ApiFactory(connectionString);
     }
 
     public string ConnectionString { get; }
 
     public TestClock Clock { get; }
+
+    public TestData Data { get; }
+
+    public ApiFactory Api { get; }
+
+    public async Task InitializeAsync()
+    {
+        await Clock.Reset();
+        await Data.EnsureReferenceData();
+    }
+
+    public async Task DisposeAsync()
+    {
+        await Clock.Reset();
+        await Api.DisposeAsync();
+    }
 
     public IDbContextFactory<PhilmartContext> ContextFactory()
     {
@@ -33,15 +48,17 @@ public class DatabaseFixture
             .UseSqlServer(ConnectionString)
             .Options;
 
-        return new PlainContextFactory(options);
+        return new TestContextFactory(options);
     }
 }
 
-// Plain factory without the API's tenancy interceptor: these tests act as the
-// migrator, not as a Shop user.
-internal class PlainContextFactory(DbContextOptions<PhilmartContext> options) : IDbContextFactory<PhilmartContext>
+// no tenancy interceptor here, the tests connect as the migrator
+public class TestContextFactory(DbContextOptions<PhilmartContext> options) : IDbContextFactory<PhilmartContext>
 {
-    public PhilmartContext CreateDbContext() => new(options);
+    public PhilmartContext CreateDbContext()
+    {
+        return new PhilmartContext(options);
+    }
 }
 
 [CollectionDefinition("Database", DisableParallelization = true)]

@@ -1,4 +1,4 @@
-# Milestone 1 — Commencement and foundation
+# Milestone 1: Commencement and foundation
 
 Schedule B, R10,000. Target submission **9 October 2026** (week 3).
 
@@ -48,6 +48,6 @@ Decisions to ask the Client for in the submission notice:
 | # | Severity | Issue |
 |---|---|---|
 | 1 | Medium | Controlled migration `003_onboarding.sql` defaults `Shop_CommercialTerms.EffectiveFrom` from `SYSUTCDATETIME()` instead of `philmart.ServerNow()`, so the test clock does not move it (clause 9.2). Not edited because the file is controlled; raised as a query. Tracked as a known exception in `AuthoritativeTimeTests`. |
-| 2 | — (fixed) | `Microsoft.OpenApi` 2.0.0, pulled in by `Microsoft.AspNetCore.OpenApi`, carried high-severity advisory GHSA-v5pm-xwqc-g5wc. Pinned to 2.7.5. |
+| 2 | Fixed | `Microsoft.OpenApi` 2.0.0, pulled in by `Microsoft.AspNetCore.OpenApi`, carried high-severity advisory GHSA-v5pm-xwqc-g5wc. Pinned to 2.7.5. |
 | 3 | Low | The seed generators (`gen_seed.py`, `build_sql.py`) named in `database/README.md` are not in the controlled pack, so `010_seed.sql` is kept exactly as issued. |
 | 4 | Info | The admin login screen is not yet wired to authentication (Milestone 2 scope). |

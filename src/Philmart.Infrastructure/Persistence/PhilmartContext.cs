@@ -3,9 +3,8 @@ using Philmart.Infrastructure.Persistence.Entities;
 
 namespace Philmart.Infrastructure.Persistence;
 
-// Hand written for now. Run tools/scaffold.ps1 to regenerate from the database
-// once the migrations are applied. There are no EF migrations, the SQL owns the
-// schema, so never call EnsureCreated.
+// Hand written for now, tools/scaffold.ps1 can regenerate it from the database.
+// The SQL migrations own the schema, so never call EnsureCreated.
 public partial class PhilmartContext(DbContextOptions<PhilmartContext> options)
     : DbContext(options)
 {

@@ -77,4 +77,12 @@ public class TenantContext : ITenantContext
     {
         return permissions.Contains(permission);
     }
+
+    // AccountCheckMiddleware replaces whatever the token said with what the
+    // database says now
+    public void UsePermissions(IEnumerable<string> current)
+    {
+        permissions.Clear();
+        permissions.AddRange(current);
+    }
 }

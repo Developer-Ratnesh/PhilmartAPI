@@ -4,9 +4,8 @@ using static Philmart.Domain.Constants.PhilmartConstants;
 
 namespace Philmart.Domain.Rules;
 
-// Mirror of the Item_TransitionRule table. The database blocks anything not in
-// that table, we keep a copy here so the screens can work out which buttons to
-// show without a round trip. A test checks the two lists still match.
+// Copy of the Item_TransitionRule table so screens can work out which buttons
+// to show. The database still has the final say. A test checks both match.
 public static class ItemStateMachine
 {
     public class Transition
@@ -99,8 +98,7 @@ public static class ItemStateMachine
         return found;
     }
 
-    // Checked here as well as in the database so the user gets a readable
-    // message instead of SQL error 50027.
+    // checked here too so the user gets a readable message, not a SQL error
     public static void Assert(string fromState, string toState, string? reason)
     {
         if (fromState == toState)

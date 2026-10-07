@@ -214,7 +214,7 @@ public class AdminOversightService(
         return byShop;
     }
 
-    // public so EF can materialise it from SqlQueryRaw
+    // public so EF can fill it from SqlQueryRaw
     public class FeeStandingRow
     {
         public Guid ShopID { get; set; }

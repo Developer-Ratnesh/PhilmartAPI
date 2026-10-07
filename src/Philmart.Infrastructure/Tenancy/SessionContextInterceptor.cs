@@ -7,14 +7,9 @@ using Philmart.Domain.Constants;
 
 namespace Philmart.Infrastructure.Tenancy;
 
-// The database security rules read three values out of session context to work
-// out which shop the caller belongs to. This puts them there.
-//
-// Session context lives on the connection, not the request, and the pool clears
-// it between uses. That's why we set it every time a connection opens.
-//
-// Don't pass read_only = 1. The values could then never be set again on that
-// connection and the next request to borrow it would fail.
+// The database security rules read the caller's details from session context.
+// That lives on the connection and pooled connections get cleared, so we set it
+// every time one opens. Don't use read_only = 1 or the next request can't set it.
 public class SessionContextInterceptor(ITenantContext tenant) : DbConnectionInterceptor
 {
     public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData)

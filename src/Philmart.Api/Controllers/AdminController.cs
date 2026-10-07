@@ -14,14 +14,12 @@ namespace Philmart.Api.Controllers;
 [Produces("application/json")]
 public class AdminController(IAdminOversightService oversight) : ControllerBase
 {
-    // SCR-ADM-001
     [HttpGet("dashboard")]
     public async Task<ActionResult<AdminDashboardDTO>> Dashboard(CancellationToken cancellationToken)
     {
         return Ok(await oversight.GetDashboard(cancellationToken));
     }
 
-    // SCR-ADM-004
     [HttpGet("shops")]
     public async Task<ActionResult<PagedResult<AdminShopDTO>>> Shops(
         [FromQuery] string? query,

@@ -61,6 +61,30 @@ public class MarketplaceController(IMarketplaceService marketplace) : Controller
         return Ok(listing);
     }
 
+    [HttpGet("listings/{listingId:guid}")]
+    public async Task<ActionResult<ListingDetailDTO>> Detail(Guid listingId, CancellationToken cancellationToken)
+    {
+        var detail = await marketplace.GetDetail(listingId, cancellationToken);
+        if (detail == null)
+        {
+            return NotFound();
+        }
+
+        return detail;
+    }
+
+    [HttpGet("shops/{shopId:guid}")]
+    public async Task<ActionResult<ShopProfileDTO>> Shop(Guid shopId, CancellationToken cancellationToken)
+    {
+        var profile = await marketplace.GetShopProfile(shopId, cancellationToken);
+        if (profile == null)
+        {
+            return NotFound();
+        }
+
+        return profile;
+    }
+
     [HttpGet("shops/{shopId:guid}/items")]
     public async Task<ActionResult<PagedResult<MarketplaceItemDTO>>> Storefront(
         Guid shopId,
@@ -74,7 +98,6 @@ public class MarketplaceController(IMarketplaceService marketplace) : Controller
         return Ok(results);
     }
 
-    // filter dropdowns
     [HttpGet("classifications/area-countries")]
     public async Task<ActionResult<List<ClassificationOptionDTO>>> AreaCountries(
         CancellationToken cancellationToken)

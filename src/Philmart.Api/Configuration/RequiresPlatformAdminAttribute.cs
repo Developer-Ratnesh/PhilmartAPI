@@ -4,9 +4,8 @@ using Philmart.Domain.Abstractions;
 
 namespace Philmart.Api.Configuration;
 
-// PHILMART administration is not a Shop permission (D049). No combination of
-// Shop permissions gets a Shop user through this, only the platform_admin
-// actor kind on the login token does.
+// PHILMART admin isn't a Shop permission (D049). Only an admin login gets
+// through here, no mix of Shop permissions will.
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
 public class RequiresPlatformAdminAttribute : Attribute, IAuthorizationFilter
 {

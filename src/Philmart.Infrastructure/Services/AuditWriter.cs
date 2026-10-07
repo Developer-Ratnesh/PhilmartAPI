@@ -37,6 +37,10 @@ public class AuditWriter(
 
         using (var context = contextFactory.CreateDbContext())
         {
+            // The database only lets a Shop write its own audit rows, so buyer and
+            // visitor events go in as 'system'. The row still says who really did it.
+            await context.UseSystemSession(actorId, cancellationToken);
+
             await context.Database.ExecuteSqlAsync(
                 $@"INSERT INTO philmart.Sys_AuditEvent
                        (ActorID, ActorKind, ShopID, EntityTable, EntityID,

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Philmart.Application.Common;
 using Philmart.Application.Marketplace;
+using Philmart.Application.Registration;
 using Philmart.Domain.Constants;
 using Philmart.Infrastructure.Persistence;
 using Philmart.Infrastructure.Persistence.Entities;
@@ -90,6 +91,91 @@ public class MarketplaceService(IDbContextFactory<PhilmartContext> contextFactor
             }
 
             return ToDto(listing);
+        }
+    }
+
+    public async Task<ListingDetailDTO?> GetDetail(Guid listingId, CancellationToken cancellationToken = default)
+    {
+        using (var context = contextFactory.CreateDbContext())
+        {
+            // the database only shows the public live and closed listings (011)
+            var row = await context.Database
+                .SqlQuery<DetailRow>($@"SELECT l.ID AS ListingID, i.ID AS ItemID, l.Reference, i.Title, i.Description,
+                                                      l.ListingType, l.State, ac.Name AS AreaCountry, t.Name AS Type, st.Name AS Subtype,
+                                                      th.Name AS Theme, c.Name AS Condition, i.CatalogueReference,
+                                                      s.ID AS ShopID, s.TradingName AS ShopName, s.Reference AS ShopReference,
+                                                      CAST(CASE WHEN s.Status = 'active' THEN 1 ELSE 0 END AS BIT) AS ShopActive,
+                                                      l.PriceMinor, l.StartingPriceMinor, l.BidIncrementMinor,
+                                                      l.ReservePriceMinor, l.StartsAt, l.EndsAt, l.SoftCloseSeconds, l.ExtensionCount,
+                                                      philmart.ServerNow() AS ServerNow
+                                               FROM philmart.List_Listing l
+                                               JOIN philmart.Item_Item i ON i.ID = l.ItemID
+                                               JOIN philmart.Shop_Shop s ON s.ID = l.ShopID
+                                               LEFT JOIN philmart.Sys_ClassificationAreaCountry ac ON ac.ID = i.AreaCountryID
+                                               LEFT JOIN philmart.Sys_ClassificationType t ON t.ID = i.TypeID
+                                               LEFT JOIN philmart.Sys_ClassificationSubtype st ON st.ID = i.SubtypeID
+                                               LEFT JOIN philmart.Sys_ClassificationTheme th ON th.ID = i.ThemeID
+                                               LEFT JOIN philmart.Sys_ItemCondition c ON c.ID = i.ConditionID
+                                               WHERE l.ID = {listingId}")
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (row == null)
+            {
+                return null;
+            }
+
+            var dto = ToDetail(row);
+
+            dto.Images = await context.Database
+                .SqlQuery<string>($"SELECT StorageKey AS Value FROM philmart.Item_Image WHERE ItemID = {dto.ItemID} ORDER BY IsPrimary DESC, SortOrder")
+                .ToListAsync(cancellationToken);
+
+            dto.DeliveryOptions = await DeliveryOptions.Load(context, dto.ShopID, cancellationToken);
+
+            string commitmentCode = dto.ListingType == PhilmartConstants.ListingType.Auction ? "LEGAL-DEC-002" : "LEGAL-DEC-001";
+            dto.Commitment = await context.Database
+                .SqlQuery<LegalDocumentDTO>($@"SELECT v.ID AS VersionID, d.Code, d.Name, v.Version, d.AcceptanceMode, v.Body
+                                               FROM philmart.Sys_LegalDocumentVersion v JOIN philmart.Sys_LegalDocument d ON d.Code = v.DocumentCode
+                                               WHERE v.DocumentCode = {commitmentCode} AND v.PublishedAt IS NOT NULL AND v.SupersededAt IS NULL")
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (dto.ListingType == PhilmartConstants.ListingType.Auction)
+            {
+                dto.Bids = await context.Database
+                    .SqlQuery<BidHistoryDTO>($"SELECT SequenceNo, AmountMinor, PlacedAt FROM philmart.List_Bid WHERE ListingID = {listingId} ORDER BY SequenceNo DESC")
+                    .ToListAsync(cancellationToken);
+
+                long high = dto.Bids.Count == 0 ? 0 : dto.Bids.Max(x => x.AmountMinor);
+                long step = dto.BidIncrementMinor ?? 1;
+                long start = dto.StartingPriceMinor ?? 0;
+
+                dto.CurrentBidMinor = dto.Bids.Count == 0 ? null : high;
+                dto.NextMinimumBidMinor = Math.Max(start, high + step);
+
+                // the reserve amount itself stays private, only whether it's met
+                dto.ReserveMet = row.ReservePriceMinor == null || high >= row.ReservePriceMinor;
+            }
+
+            return dto;
+        }
+    }
+
+    public async Task<ShopProfileDTO?> GetShopProfile(Guid shopId, CancellationToken cancellationToken = default)
+    {
+        using (var context = contextFactory.CreateDbContext())
+        {
+            // Shop settings are private to the Shop, so read as system and only
+            // send back the public fields
+            await context.UseSystemSession(null, cancellationToken);
+
+            return await context.Database
+                .SqlQuery<ShopProfileDTO>($@"SELECT s.ID AS ShopID, s.Reference, ISNULL(ss.PublicProfileName, s.TradingName) AS Name,
+                                                    ss.PublicProfileBlurb AS Blurb,
+                                                    CAST(CASE WHEN s.Status = 'active' THEN 1 ELSE 0 END AS BIT) AS Active
+                                             FROM philmart.Shop_Shop s
+                                             LEFT JOIN philmart.Shop_Settings ss ON ss.ShopID = s.ID
+                                             WHERE s.ID = {shopId} AND s.Status IN ('active', 'deactivated')")
+                .FirstOrDefaultAsync(cancellationToken);
         }
     }
 
@@ -208,5 +294,91 @@ public class MarketplaceService(IDbContextFactory<PhilmartContext> contextFactor
 
             return await context.Database.SqlQueryRaw<ClassificationOptionDTO>(filtered, typeId.Value).ToListAsync(cancellationToken);
         }
+    }
+
+    private static ListingDetailDTO ToDetail(DetailRow row)
+    {
+        var dto = new ListingDetailDTO();
+        dto.ListingID = row.ListingID;
+        dto.ItemID = row.ItemID;
+        dto.Reference = row.Reference;
+        dto.Title = row.Title;
+        dto.Description = row.Description;
+        dto.ListingType = row.ListingType;
+        dto.State = row.State;
+        dto.AreaCountry = row.AreaCountry;
+        dto.Type = row.Type;
+        dto.Subtype = row.Subtype;
+        dto.Theme = row.Theme;
+        dto.Condition = row.Condition;
+        dto.CatalogueReference = row.CatalogueReference;
+        dto.ShopID = row.ShopID;
+        dto.ShopName = row.ShopName;
+        dto.ShopReference = row.ShopReference;
+        dto.ShopActive = row.ShopActive;
+        dto.PriceMinor = row.PriceMinor;
+        dto.StartingPriceMinor = row.StartingPriceMinor;
+        dto.BidIncrementMinor = row.BidIncrementMinor;
+        dto.StartsAt = row.StartsAt;
+        dto.EndsAt = row.EndsAt;
+        dto.SoftCloseSeconds = row.SoftCloseSeconds;
+        dto.ExtensionCount = row.ExtensionCount;
+        dto.ServerNow = row.ServerNow;
+        return dto;
+    }
+
+    private class DetailRow
+    {
+        public Guid ListingID { get; set; }
+
+        public Guid ItemID { get; set; }
+
+        public string Reference { get; set; } = null!;
+
+        public string Title { get; set; } = null!;
+
+        public string? Description { get; set; }
+
+        public string ListingType { get; set; } = null!;
+
+        public string State { get; set; } = null!;
+
+        public string? AreaCountry { get; set; }
+
+        public string? Type { get; set; }
+
+        public string? Subtype { get; set; }
+
+        public string? Theme { get; set; }
+
+        public string? Condition { get; set; }
+
+        public string? CatalogueReference { get; set; }
+
+        public Guid ShopID { get; set; }
+
+        public string ShopName { get; set; } = null!;
+
+        public string ShopReference { get; set; } = null!;
+
+        public bool ShopActive { get; set; }
+
+        public long? PriceMinor { get; set; }
+
+        public long? StartingPriceMinor { get; set; }
+
+        public long? BidIncrementMinor { get; set; }
+
+        public long? ReservePriceMinor { get; set; }
+
+        public DateTimeOffset? StartsAt { get; set; }
+
+        public DateTimeOffset? EndsAt { get; set; }
+
+        public int? SoftCloseSeconds { get; set; }
+
+        public int ExtensionCount { get; set; }
+
+        public DateTimeOffset ServerNow { get; set; }
     }
 }

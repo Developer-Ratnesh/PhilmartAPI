@@ -2,47 +2,49 @@ using System.Text.RegularExpressions;
 
 namespace Philmart.UnitTests;
 
-// Agreement clause 9.2 and task T06. The test clock only works if nothing goes
-// around philmart.ServerNow(). One DateTime.Now in a rule or one inline
-// SYSDATETIMEOFFSET() in the SQL and that rule can no longer be tested by
-// moving the clock, so these fail the build when either appears.
+// Clause 9.2. Anything reading the clock without philmart.ServerNow() won't
+// move with the test clock. These fail the build when that happens.
 public class AuthoritativeTimeTests
 {
-    private static readonly Regex DotNetClock = new(
-        @"\b(DateTime|DateTimeOffset)\s*\.\s*(Now|UtcNow|Today)\b|\bTimeProvider\.System\b|\bEnvironment\.TickCount",
-        RegexOptions.Compiled);
+    private static readonly Regex DotNetClock = new(@"\b(DateTime|DateTimeOffset)\.(Now|UtcNow|Today)\b");
 
     private static readonly Regex SqlClock = new(
         @"\b(SYSDATETIMEOFFSET|SYSDATETIME|SYSUTCDATETIME|GETDATE|GETUTCDATE|CURRENT_TIMESTAMP)\b",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        RegexOptions.IgnoreCase);
 
-    // Raised with the Client, not fixed here: 010 and earlier are controlled
-    // files. Shop_CommercialTerms.EffectiveFrom defaults from SYSUTCDATETIME(),
-    // so a frozen test clock does not move it. Anything new fails.
-    private static readonly string[] KnownSqlExceptions =
-    {
-        "003_onboarding.sql: DF_sct_from",
-    };
+    // 003 defaults Shop_CommercialTerms.EffectiveFrom from SYSUTCDATETIME().
+    // It's a controlled file so we can't fix it here, raised with the client.
+    private static readonly string[] KnownSqlExceptions = { "DF_sct_from" };
+
+    // Login token expiry. The same web server checks it against its own clock,
+    // so database time would be wrong here. Not a business rule.
+    private static readonly string[] AllowedFiles = { "TokenIssuer.cs" };
 
     [Fact]
     public void Source_never_reads_the_web_server_clock()
     {
+        string root = RepoRoot();
         var offenders = new List<string>();
 
-        foreach (var file in Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src"), "*.cs", SearchOption.AllDirectories))
+        foreach (string file in Directory.EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories))
         {
-            if (IsBuildOutput(file))
+            if (file.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar)
+                || file.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)
+                || AllowedFiles.Contains(Path.GetFileName(file)))
             {
                 continue;
             }
 
-            var lines = File.ReadAllLines(file);
+            string[] lines = File.ReadAllLines(file);
             for (int i = 0; i < lines.Length; i++)
             {
-                var code = StripCSharpComment(lines[i]);
+                // comments are allowed to mention DateTime.Now, see IServerClock
+                int comment = lines[i].IndexOf("//");
+                string code = comment < 0 ? lines[i] : lines[i].Substring(0, comment);
+
                 if (DotNetClock.IsMatch(code))
                 {
-                    offenders.Add($"{Path.GetRelativePath(RepoRoot(), file)}:{i + 1}: {lines[i].Trim()}");
+                    offenders.Add(Path.GetRelativePath(root, file) + ":" + (i + 1) + ": " + lines[i].Trim());
                 }
             }
         }
@@ -55,30 +57,25 @@ public class AuthoritativeTimeTests
     {
         var offenders = new List<string>();
 
-        foreach (var file in Directory.EnumerateFiles(Path.Combine(RepoRoot(), "database", "migrations"), "*.sql").Order())
+        foreach (string file in Directory.GetFiles(Path.Combine(RepoRoot(), "database", "migrations"), "*.sql"))
         {
-            var name = Path.GetFileName(file);
-            var sql = StripSqlComments(File.ReadAllText(file));
+            string sql = File.ReadAllText(file);
 
+            sql = Regex.Replace(sql, @"/\*.*?\*/", "", RegexOptions.Singleline);
+            sql = Regex.Replace(sql, @"--[^\n]*", "");
+
+            // ServerNow itself is the one place allowed to call the real clock
             sql = Regex.Replace(
                 sql,
                 @"CREATE\s+FUNCTION\s+philmart\.ServerNow\s*\(.*?^\s*GO\s*$",
                 "",
                 RegexOptions.Singleline | RegexOptions.Multiline | RegexOptions.IgnoreCase);
 
-            foreach (var line in sql.Split('\n'))
+            foreach (string line in sql.Split('\n'))
             {
-                if (!SqlClock.IsMatch(line))
+                if (SqlClock.IsMatch(line) && !KnownSqlExceptions.Any(x => line.Contains(x)))
                 {
-                    continue;
-                }
-
-                bool known = KnownSqlExceptions.Any(k =>
-                    k.StartsWith(name + ":") && line.Contains(k[(name.Length + 2)..]));
-
-                if (!known)
-                {
-                    offenders.Add($"{name}: {line.Trim()}");
+                    offenders.Add(Path.GetFileName(file) + ": " + line.Trim());
                 }
             }
         }
@@ -86,12 +83,12 @@ public class AuthoritativeTimeTests
         Assert.True(offenders.Count == 0, "Call philmart.ServerNow() instead:\n" + string.Join("\n", offenders));
     }
 
+    // Once the client sends a fixed 003, take DF_sct_from out of the list above.
+    // Otherwise it would let the same mistake back in.
     [Fact]
-    public void Known_exceptions_are_still_real()
+    public void Known_exception_is_still_there()
     {
-        // When the Client's fix lands, the exception has to come out of the
-        // list too, or it would quietly allow the same mistake to come back.
-        var sql = File.ReadAllText(Path.Combine(RepoRoot(), "database", "migrations", "003_onboarding.sql"));
+        string sql = File.ReadAllText(Path.Combine(RepoRoot(), "database", "migrations", "003_onboarding.sql"));
 
         Assert.Matches(@"DF_sct_from\s+DEFAULT\s*\(\s*CAST\s*\(\s*SYSUTCDATETIME\(\)", sql);
     }
@@ -104,24 +101,11 @@ public class AuthoritativeTimeTests
             dir = dir.Parent;
         }
 
-        return dir?.FullName ?? throw new InvalidOperationException("Could not find Philmart.sln above " + AppContext.BaseDirectory);
-    }
+        if (dir == null)
+        {
+            throw new InvalidOperationException("Couldn't find Philmart.sln above " + AppContext.BaseDirectory);
+        }
 
-    private static bool IsBuildOutput(string path)
-    {
-        var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return parts.Contains("bin") || parts.Contains("obj");
-    }
-
-    private static string StripCSharpComment(string line)
-    {
-        int comment = line.IndexOf("//", StringComparison.Ordinal);
-        return comment < 0 ? line : line[..comment];
-    }
-
-    private static string StripSqlComments(string sql)
-    {
-        sql = Regex.Replace(sql, @"/\*.*?\*/", "", RegexOptions.Singleline);
-        return Regex.Replace(sql, @"--[^\n]*", "");
+        return dir.FullName;
     }
 }

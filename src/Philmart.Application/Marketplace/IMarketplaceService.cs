@@ -9,6 +9,10 @@ public interface IMarketplaceService
 
     Task<MarketplaceItemDTO?> GetListing(Guid listingId, CancellationToken cancellationToken = default);
 
+    Task<ListingDetailDTO?> GetDetail(Guid listingId, CancellationToken cancellationToken = default);
+
+    Task<ShopProfileDTO?> GetShopProfile(Guid shopId, CancellationToken cancellationToken = default);
+
     Task<PagedResult<MarketplaceItemDTO>> GetStorefront(Guid shopId, PageRequest page, CancellationToken cancellationToken = default);
 
     Task<List<ClassificationOptionDTO>> GetAreaCountries(CancellationToken cancellationToken = default);
