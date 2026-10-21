@@ -49,6 +49,9 @@ public class ShippingPreferenceRequest
     public Guid? PickupPointID { get; set; }
 
     public bool UseAddress { get; set; }
+
+    // the one method pre-selected at purchase (checklist R.6/B.4); at most one
+    public bool Preferred { get; set; }
 }
 
 public class AcceptLegalRequest

@@ -1,18 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, type ReactNode } from "react";
 import { Notice } from "@/components/ui/Form";
 import type { PagedResult } from "@/lib/api";
 import { useSession } from "@/lib/session";
 
 export function BuyerOnly({ children }: { children: ReactNode }) {
   const session = useSession();
+  const router = useRouter();
+  const path = usePathname();
+
+  // signed out: off to sign in, then back here (checklist L.9)
+  useEffect(() => {
+    // the session store reads localStorage on the client, so wait a tick before deciding
+    const t = setTimeout(() => {
+      if (!session) router.replace("/login?next=" + encodeURIComponent(path));
+    }, 50);
+    return () => clearTimeout(t);
+  }, [session, router, path]);
 
   if (!session) {
     return (
       <Notice>
-        <Link href="/login" className="font-semibold hover:underline">Sign in</Link> to see this page.
+        <Link href={"/login?next=" + encodeURIComponent(path)} className="font-semibold hover:underline">Sign in</Link> to see this page.
       </Notice>
     );
   }

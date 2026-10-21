@@ -47,6 +47,9 @@ public class InviteResultDTO
 
     // the link the new user opens to set a password
     public string InvitationLink { get; set; } = string.Empty;
+
+    // false when the mail server refused it; the admin passes the link on instead
+    public bool EmailSent { get; set; }
 }
 
 public class SetPermissionsRequest

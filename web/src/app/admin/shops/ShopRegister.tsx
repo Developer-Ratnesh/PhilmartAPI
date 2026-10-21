@@ -32,6 +32,9 @@ export function ShopRegister() {
   const [search, setSearch] = useState(filter.query ?? "");
   const [data, setData] = useState<PagedResult<AdminShop> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [changing, setChanging] = useState<AdminShop | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,7 +54,7 @@ export function ShopRegister() {
     return () => {
       cancelled = true;
     };
-  }, [filter]);
+  }, [filter, version]);
 
   // any filter change goes back to page 1
   function update(change: Partial<AdminShopQuery>) {
@@ -60,6 +63,24 @@ export function ShopRegister() {
 
   return (
     <div className="flex flex-col gap-4">
+      {notice && (
+        <p className="px-3 py-2 text-sm" style={{ border: "1px solid var(--border-subtle)", borderRadius: 4, background: "var(--surface-card)", color: "var(--text-primary)" }}>
+          {notice}
+        </p>
+      )}
+
+      {changing && (
+        <StatusDialog
+          shop={changing}
+          onClose={() => setChanging(null)}
+          onDone={(message) => {
+            setChanging(null);
+            setNotice(message);
+            setVersion((v) => v + 1);
+          }}
+        />
+      )}
+
       <form
         className="flex flex-wrap items-end gap-3"
         onSubmit={(e) => {
@@ -149,6 +170,7 @@ export function ShopRegister() {
                   <Th right>Live listings</Th>
                   <Th right>Fees outstanding</Th>
                   <Th right>Overdue</Th>
+                  <Th>Actions</Th>
                 </tr>
               </thead>
               <tbody>
@@ -189,6 +211,21 @@ export function ShopRegister() {
                         "—"
                       )}
                     </Td>
+                    <Td>
+                      {(shop.status === "active" || shop.status === "deactivated") && (
+                        <button
+                          type="button"
+                          className="text-xs font-semibold hover:underline"
+                          style={{ color: shop.status === "active" ? "var(--accent-danger)" : "var(--accent-live)" }}
+                          onClick={() => {
+                            setNotice(null);
+                            setChanging(shop);
+                          }}
+                        >
+                          {shop.status === "active" ? "Deactivate" : "Reactivate"}
+                        </button>
+                      )}
+                    </Td>
                   </tr>
                 ))}
               </tbody>
@@ -211,6 +248,69 @@ export function ShopRegister() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// D031: deactivating is a deliberate admin act with a recorded reason. D032:
+// auctions that already have bids still run to the end.
+function StatusDialog({ shop, onClose, onDone }: { shop: AdminShop; onClose: () => void; onDone: (message: string) => void }) {
+  const deactivate = shop.status === "active";
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      if (deactivate) await api.admin.deactivateShop(shop.id, reason);
+      else await api.admin.reactivateShop(shop.id, reason);
+      onDone(`${shop.tradingName} has been ${deactivate ? "deactivated" : "reactivated"}.`);
+    } catch (err) {
+      setError(adminErrorMessage(err, "That didn't work. Please try again."));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4" style={{ background: "rgb(15 23 42 / 0.5)" }} role="dialog" aria-modal="true">
+      <form onSubmit={submit} className="mt-16 w-full max-w-lg p-6" style={{ background: "var(--surface-card)", borderRadius: "var(--radius-card)" }}>
+        <h2 className="font-display text-xl font-bold" style={{ color: "var(--text-primary)" }}>
+          {deactivate ? "Deactivate" : "Reactivate"} {shop.tradingName}
+        </h2>
+        <p className="mb-4 mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+          {deactivate
+            ? "The Shop stops taking new Buy Now purchases and bids straight away. Auctions that already have bids run to their end. The reason is kept in the audit history."
+            : "The Shop can sell again straight away. The reason is kept in the audit history."}
+        </p>
+
+        {error && (
+          <p role="alert" className="mb-3 px-3 py-2 text-sm" style={{ color: "var(--accent-danger)", border: "1px solid var(--accent-danger)", borderRadius: 4 }}>
+            {error}
+          </p>
+        )}
+
+        <label className="flex flex-col gap-1 text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+          Reason *
+          <textarea required rows={3} maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} style={inputStyle} />
+        </label>
+
+        <div className="mt-5 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-semibold" style={{ border: "1px solid var(--border-default)", borderRadius: 4, color: "var(--text-primary)" }}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={busy || reason.trim().length === 0}
+            className="px-4 py-2 text-sm font-bold disabled:opacity-40"
+            style={{ background: deactivate ? "var(--accent-danger)" : "var(--philmart-navy-deep)", color: "#ffffff", borderRadius: 4 }}
+          >
+            {deactivate ? "Deactivate Shop" : "Reactivate Shop"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

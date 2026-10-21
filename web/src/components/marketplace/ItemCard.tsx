@@ -81,18 +81,18 @@ export function ItemCard({ item }: { item: MarketplaceItem }) {
           {isAuction ? (
             <div>
               <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                Current Bid:{" "}
+                {item.currentBidMinor == null ? "Starting Bid: " : "Current Bid: "}
               </span>
               <span
-                className="font-display text-sm font-bold"
+                className="font-display text-sm font-bold whitespace-nowrap"
                 style={{ color: "var(--price-bid)" }}
               >
-                {formatMoney(item.currentBidMinor ?? 0)}
+                {formatMoney(auctionPrice(item))}
               </span>
             </div>
           ) : (
             <span
-              className="font-display text-base font-bold"
+              className="font-display text-base font-bold whitespace-nowrap"
               style={{ color: "var(--price-fixed)" }}
             >
               {formatMoney(item.priceMinor)}
@@ -111,6 +111,11 @@ export function ItemCard({ item }: { item: MarketplaceItem }) {
       </div>
     </Link>
   );
+}
+
+// no bids yet: the starting price, never R 0,00
+function auctionPrice(item: MarketplaceItem) {
+  return item.currentBidMinor ?? item.startingPriceMinor;
 }
 
 // same data as the card, just laid out differently
@@ -167,8 +172,9 @@ export function ItemRow({ item }: { item: MarketplaceItem }) {
             <span
               className="font-display text-base font-bold"
               style={{ color: "var(--price-bid)" }}
+              title={item.currentBidMinor == null ? "Starting bid" : "Current bid"}
             >
-              {formatMoney(item.currentBidMinor ?? 0)}
+              {formatMoney(auctionPrice(item))}
             </span>
             {timeLeft && (
               <span className="text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>

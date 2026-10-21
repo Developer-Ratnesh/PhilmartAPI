@@ -68,7 +68,7 @@ public class MarketplaceAndCommitmentTests(DatabaseFixture db)
         var buyer = await db.Data.CreateBuyer();
         string token = await db.Api.SignIn(buyer.Email, TestData.Password, "buyer");
 
-        var buy = await Buy(token, listing, new { addressLine1 = "99 Override Lane", city = "Pretoria", countryCode = "ZA" });
+        var buy = await Buy(token, listing, new { addressLine1 = "99 Override Lane", city = "Pretoria", postalCode = "0001", countryCode = "ZA" });
         Assert.Equal(HttpStatusCode.OK, buy.StatusCode);
         Guid sale = (await buy.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("saleTransactionID").GetGuid();
 

@@ -93,6 +93,16 @@ builder.Services.AddRateLimiter(options =>
             PermitLimit = builder.Configuration.GetValue("Support:RequestsPerHour", 10),
             Window = TimeSpan.FromHours(1)
         }));
+
+    // N01: PinChallenges already caps sends per email address. This caps one
+    // client working through many addresses, which would spam inboxes.
+    options.AddPolicy(Program.PinLimit, http => RateLimitPartition.GetFixedWindowLimiter(
+        http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue("Auth:PinRequestsPer10Minutes", 30),
+            Window = TimeSpan.FromMinutes(10)
+        }));
 });
 
 var app = builder.Build();
@@ -122,10 +132,32 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
    .AllowAnonymous()
    .WithName("Health");
 
+// N28: which build is answering. The SDK stamps the git commit into the
+// informational version ("1.0.0+<sha>") when it builds from the repository.
+app.MapGet("/api/version", () =>
+{
+    var assembly = typeof(Program).Assembly;
+    string version = System.Reflection.CustomAttributeExtensions
+        .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(assembly)?.InformationalVersion ?? "unknown";
+    int plus = version.IndexOf('+');
+
+    return Results.Ok(new
+    {
+        version = plus < 0 ? version : version.Substring(0, plus),
+        commit = plus < 0 ? null : version.Substring(plus + 1),
+        builtAt = File.GetLastWriteTimeUtc(assembly.Location),
+        environment = app.Environment.EnvironmentName
+    });
+})
+   .AllowAnonymous()
+   .WithName("Version");
+
 app.Run();
 
 // so the integration tests can use WebApplicationFactory
 public partial class Program
 {
     public const string SupportLimit = "support";
+
+    public const string PinLimit = "pin";
 }

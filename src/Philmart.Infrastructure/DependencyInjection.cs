@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Philmart.Application.Restrictions;
 using Philmart.Application.Abstractions;
 using Philmart.Application.Account;
 using Philmart.Application.Admin;
@@ -8,7 +9,9 @@ using Philmart.Application.Auctions;
 using Philmart.Application.Auth;
 using Philmart.Application.Commitments;
 using Philmart.Application.Registration;
+using Philmart.Application.ShopDashboard;
 using Philmart.Application.ShopUsers;
+using Philmart.Application.Invoices;
 using Philmart.Application.Items;
 using Philmart.Application.Marketplace;
 using Philmart.Application.Support;
@@ -63,6 +66,10 @@ public static class DependencyInjection
         services.AddScoped<IAuctionCloser, AuctionCloser>();
         services.AddScoped<ISupportService, SupportService>();
         services.AddScoped<IBuyerListService, BuyerListService>();
+        services.AddScoped<IBuyerProfileService, BuyerProfileService>();
+        services.AddScoped<IShopDashboardService, ShopDashboardService>();
+        services.AddScoped<IBuyerRestrictionService, BuyerRestrictionService>();
+        services.AddScoped<IInvoiceService, InvoiceService>();
         services.AddScoped<IEmailDispatcher, EmailDispatcher>();
         services.AddSingleton<IEmailSender, SmtpEmailSender>();
 

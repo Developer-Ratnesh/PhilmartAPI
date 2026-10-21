@@ -69,6 +69,12 @@ public class PurchaseDefaultsDTO
 {
     public Guid DeliveryMethodID { get; set; }
 
+    // the buyer ticked this method as one they can use (registration Step 3 / profile)
+    public bool Available { get; set; }
+
+    // the buyer's preferred method, pre-selected on the item page
+    public bool Preferred { get; set; }
+
     public Guid? PickupPointID { get; set; }
 
     public DeliveryAddressDTO? Address { get; set; }

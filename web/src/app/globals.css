@@ -28,6 +28,8 @@
   --philmart-navy-soft: #1c3c6b;
   --philmart-gold: #d9a227;
   --philmart-gold-deep: #b8851a;
+  /* navy used as text or a border; navy-deep is for backgrounds only */
+  --philmart-navy-ink: #0b1e3d;
 
   /* Surfaces ---------------------------------------------------------- */
   --surface-page: #f5f7fa;          /* Shop workspace background */
@@ -44,6 +46,7 @@
   --text-muted: #6b7789;
   --text-inverse: #ffffff;
   --text-on-gold: #10294f;
+  --text-on-inverse: #ffffff;       /* text on surface-inverse */
 
   /* Lines ------------------------------------------------------------- */
   --border-subtle: #e2e7ef;
@@ -84,6 +87,7 @@
     --philmart-navy-soft: #16294a;
     --philmart-gold: #e8b944;
     --philmart-gold-deep: #c9992c;
+    --philmart-navy-ink: #8fb2e0;
 
     --surface-page: #0b1220;
     --surface-marketplace: #0e1626;
@@ -98,6 +102,7 @@
     --text-muted: #7d8aa0;
     --text-inverse: #0b1220;
     --text-on-gold: #10294f;
+    --text-on-inverse: #e8edf6;
 
     --border-subtle: #222e45;
     --border-default: #2e3c57;
@@ -130,6 +135,7 @@
   --philmart-navy-soft: #16294a;
   --philmart-gold: #e8b944;
   --philmart-gold-deep: #c9992c;
+  --philmart-navy-ink: #8fb2e0;
 
   --surface-page: #0b1220;
   --surface-marketplace: #0e1626;
@@ -144,6 +150,7 @@
   --text-muted: #7d8aa0;
   --text-inverse: #0b1220;
   --text-on-gold: #10294f;
+  --text-on-inverse: #e8edf6;
 
   --border-subtle: #222e45;
   --border-default: #2e3c57;

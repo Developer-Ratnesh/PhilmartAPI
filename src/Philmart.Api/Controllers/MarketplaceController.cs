@@ -126,4 +126,25 @@ public class MarketplaceController(IMarketplaceService marketplace) : Controller
     {
         return Ok(await marketplace.GetThemes(cancellationToken));
     }
+
+    [HttpGet("classifications/formats")]
+    public async Task<ActionResult<List<ClassificationOptionDTO>>> Formats(
+        CancellationToken cancellationToken)
+    {
+        return Ok(await marketplace.GetFormats(cancellationToken));
+    }
+
+    [HttpGet("classifications/stamp-states")]
+    public async Task<ActionResult<List<ClassificationOptionDTO>>> StampStates(
+        CancellationToken cancellationToken)
+    {
+        return Ok(await marketplace.GetStampStates(cancellationToken));
+    }
+
+    [HttpGet("shops")]
+    public async Task<ActionResult<List<ClassificationOptionDTO>>> Shops(
+        CancellationToken cancellationToken)
+    {
+        return Ok(await marketplace.GetShops(cancellationToken));
+    }
 }

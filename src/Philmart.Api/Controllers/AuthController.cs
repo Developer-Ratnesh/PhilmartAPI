@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Philmart.Api.Auth;
 using Philmart.Application.Auth;
 
@@ -25,6 +27,7 @@ public class AuthController(IAuthService auth, TokenIssuer tokens) : ControllerB
 
     [HttpPost("buyer/pin")]
     [AllowAnonymous]
+    [EnableRateLimiting(Program.PinLimit)]
     public Task<PinChallengeDTO> BuyerPin(PinRequest request, CancellationToken cancellationToken)
     {
         return auth.RequestBuyerPin(request.Email, cancellationToken);
@@ -41,6 +44,22 @@ public class AuthController(IAuthService auth, TokenIssuer tokens) : ControllerB
         }
 
         return new SignInResponse { Token = tokens.Issue(user), User = user };
+    }
+
+    // N03: the token is refused from now on, not just forgotten by the browser
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+    {
+        string? tokenId = User.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;
+        long expires;
+
+        if (tokenId != null && long.TryParse(User.FindFirst(JwtRegisteredClaimNames.Exp)?.Value, out expires))
+        {
+            await auth.SignOut(tokenId, DateTimeOffset.FromUnixTimeSeconds(expires), cancellationToken);
+        }
+
+        return NoContent();
     }
 
     [HttpGet("me")]

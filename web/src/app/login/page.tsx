@@ -41,11 +41,16 @@ export default function BuyerLoginPage() {
       const res = await api.auth.buyerVerify(challenge, pin);
       saveSession(res.token, res.user);
 
+      // a page that sent them here to sign in, e.g. /account/saved. Only our own
+      // paths, never another site.
+      const next = new URLSearchParams(window.location.search).get("next");
+      const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+
       // a registration left half way carries on where it stopped
       if (res.user.registrationStep !== null) {
         router.push("/register");
       } else {
-        router.push("/marketplace");
+        router.push(safeNext ?? "/marketplace");
       }
     } catch (err) {
       setError(errorText(err));
@@ -68,7 +73,7 @@ export default function BuyerLoginPage() {
               Sign in to access your Buyer account.
             </p>
           </div>
-          <Link href="/register" className="text-xs font-bold hover:underline" style={{ color: "var(--philmart-navy-deep)" }}>
+          <Link href="/register" className="text-xs font-bold hover:underline" style={{ color: "var(--philmart-navy-ink)" }}>
             New Buyer? Create Buyer Account
           </Link>
         </div>
@@ -114,7 +119,7 @@ export default function BuyerLoginPage() {
 
         <p className="mt-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
           A Shop or Club user?{" "}
-          <Link href="/workspace/login" className="font-semibold hover:underline" style={{ color: "var(--philmart-navy-deep)" }}>
+          <Link href="/workspace/login" className="font-semibold hover:underline" style={{ color: "var(--philmart-navy-ink)" }}>
             Sign in to your Shop workspace
           </Link>
         </p>

@@ -1,34 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { Lockup } from "@/components/brand/Lockup";
 import { useTheme } from "@/lib/theme";
-import { clearSession, useSession } from "@/lib/session";
+import { useSession } from "@/lib/session";
+import { signOut } from "@/lib/api";
+import { useFreshUser } from "@/lib/useFreshUser";
 
+// The approved lockup (BRAND-SHELL-001), on a white plate so it stays legible in dark mode.
 function Logo() {
   return (
-    <Link href="/" className="flex items-center gap-3" aria-label="PHILMART home">
-      <span
-        className="flex h-11 w-11 shrink-0 items-center justify-center font-display text-lg font-bold"
-        style={{
-          background: "var(--philmart-navy)",
-          color: "var(--philmart-gold)",
-          border: "2px solid var(--philmart-gold)",
-          borderRadius: 3,
-        }}
-        aria-hidden
-      >
-        PM
-      </span>
-      <span className="leading-tight">
-        <span className="block font-display text-xl font-bold tracking-wide">
-          <span style={{ color: "var(--philmart-navy)" }}>PHIL</span>
-          <span style={{ color: "var(--philmart-gold)" }}>MART</span>
-        </span>
-        <span className="block text-[9px]" style={{ color: "var(--text-muted)" }}>
-          South Africa&rsquo;s Philatelic Marketplace &amp; Auction House
-        </span>
-      </span>
-    </Link>
+    <span className="inline-flex items-center px-2 py-1" style={{ background: "#ffffff", borderRadius: 4 }}>
+      <Lockup size="md" priority />
+    </span>
   );
 }
 
@@ -125,7 +109,7 @@ export function PublicFooter({ screenId }: { screenId?: string }) {
   return (
     <footer
       className="mt-auto"
-      style={{ background: "var(--surface-inverse)", color: "var(--text-inverse)" }}
+      style={{ background: "var(--surface-inverse)", color: "var(--text-on-inverse)" }}
     >
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-4 py-4 text-xs">
         <span>© PHILMART</span>
@@ -133,6 +117,7 @@ export function PublicFooter({ screenId }: { screenId?: string }) {
           <Link href="/terms" className="hover:underline">
             Terms &amp; Conditions
           </Link>
+          <span aria-hidden style={{ opacity: 0.5 }}>|</span>
           <Link href="/support" className="hover:underline">
             Contact Us
           </Link>
@@ -155,6 +140,7 @@ export function PublicFooter({ screenId }: { screenId?: string }) {
 
 function AccountLink() {
   const session = useSession();
+  useFreshUser();
 
   if (!session) {
     return (
@@ -165,14 +151,19 @@ function AccountLink() {
   }
 
   const user = session.user;
-  const home = user.actorKind === "Shop_User" ? "/workspace" : user.actorKind === "platform_admin" ? "/admin" : user.registrationStep !== null ? "/register" : "/account/saved";
+  const home = user.actorKind === "Shop_User" ? "/workspace" : user.actorKind === "platform_admin" ? "/admin" : user.registrationStep !== null ? "/register" : "/account/profile";
 
   return (
     <span className="flex items-center gap-3 text-sm">
-      <Link href={home} className="font-medium" style={{ color: "var(--text-primary)" }}>
-        {user.fullName ?? user.email}
+      <Link href={home} className="text-center font-medium" style={{ color: "var(--text-primary)" }}>
+        {user.actorKind === "Buy_Buyer" && user.registrationStep === null ? "My Account" : user.fullName ?? user.email}
+        {user.actorKind === "Buy_Buyer" && user.registrationStep === null && (
+          <span className="block text-[10px]" style={{ color: "var(--text-muted)" }}>
+            {user.fullName ?? user.email}
+          </span>
+        )}
       </Link>
-      <button type="button" className="text-xs hover:underline" style={{ color: "var(--text-muted)" }} onClick={() => clearSession()}>
+      <button type="button" className="text-xs hover:underline" style={{ color: "var(--text-muted)" }} onClick={() => signOut()}>
         Sign out
       </button>
     </span>

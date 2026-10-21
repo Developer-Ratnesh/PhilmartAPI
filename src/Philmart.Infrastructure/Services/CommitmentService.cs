@@ -31,6 +31,8 @@ public class CommitmentService(IDbContextFactory<PhilmartContext> contextFactory
 
                 var dto = new PurchaseDefaultsDTO();
                 dto.DeliveryMethodID = m.ID;
+                dto.Available = pref != null;
+                dto.Preferred = pref?.IsPreferred ?? false;
                 dto.PickupPointID = pref?.DefaultPickupPointID;
                 dto.Address = await LoadAddress(context, buyerId, pref?.DefaultAddressID, cancellationToken);
                 result.Add(dto);
@@ -384,6 +386,14 @@ public class CommitmentService(IDbContextFactory<PhilmartContext> contextFactory
                 throw new BusinessRuleViolationException("Enter a delivery address.", "D009");
             }
 
+            // B02: an address typed in for this purchase needs everything the
+            // courier does, same as registration step 3. A blank one is refused,
+            // not saved as "Destination: ,".
+            if (request.Address != null && string.IsNullOrWhiteSpace(request.Address.PostalCode))
+            {
+                throw new BusinessRuleViolationException("Enter the postal code for the delivery address.", "D009");
+            }
+
             values.AddressLine1 = address.AddressLine1.Trim();
             values.AddressLine2 = address.AddressLine2;
             values.City = address.City.Trim();
@@ -398,7 +408,7 @@ public class CommitmentService(IDbContextFactory<PhilmartContext> contextFactory
     private static Task<PreferenceRow?> LoadPreference(PhilmartContext context, Guid buyerId, Guid methodId, CancellationToken cancellationToken)
     {
         return context.Database
-            .SqlQuery<PreferenceRow>($@"SELECT DefaultPickupPointID, DefaultAddressID FROM philmart.Buy_ShippingPreference
+            .SqlQuery<PreferenceRow>($@"SELECT DefaultPickupPointID, DefaultAddressID, IsPreferred FROM philmart.Buy_ShippingPreference
                                         WHERE BuyerID = {buyerId} AND DeliveryMethodID = {methodId} AND Available = 1")
             .FirstOrDefaultAsync(cancellationToken)!;
     }
@@ -496,6 +506,8 @@ public class CommitmentService(IDbContextFactory<PhilmartContext> contextFactory
         public Guid? DefaultPickupPointID { get; set; }
 
         public Guid? DefaultAddressID { get; set; }
+
+        public bool IsPreferred { get; set; }
     }
 
     private class PickupRow

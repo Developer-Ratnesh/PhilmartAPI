@@ -26,6 +26,8 @@ export default function ItemDetailPage() {
   const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // kept up here so the 10-second refresh doesn't fold it shut again (client review B04)
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
 
@@ -46,6 +48,25 @@ export default function ItemDetailPage() {
   }, [id, attempt]);
 
   const isBuyer = session?.user.actorKind === "Buy_Buyer";
+  const registered = isBuyer && session?.user.registrationStep === null;
+  const [methodPicked, setMethodPicked] = useState(false);
+
+  // B.4: start on the buyer's own preferred method from registration / profile,
+  // not just the Shop's first one. Once they pick one themselves, leave it alone.
+  useEffect(() => {
+    if (!registered || !detail?.listingID || methodPicked) return;
+    let cancelled = false;
+    api.listings
+      .purchaseDefaults(detail.listingID)
+      .then((d) => {
+        const preferred = d.find((x) => x.preferred) ?? d.find((x) => x.available);
+        if (!cancelled && preferred) setMethodId(preferred.deliveryMethodID);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [registered, detail?.listingID, methodPicked]);
 
   // feeds Recently Viewed (SCR-PUB-008). Not worth bothering the buyer if it fails.
   useEffect(() => {
@@ -56,6 +77,15 @@ export default function ItemDetailPage() {
 
   const isAuction = detail?.listingType === "auction";
   const open = detail?.state === "live";
+
+  // A live auction moves without us: other bids, a soft close extension (A.10)
+  // and the close itself (A.12). Re-read it from the server every few seconds,
+  // but not while the buyer is in the confirm dialog.
+  useEffect(() => {
+    if (!isAuction || !open || confirming) return;
+    const timer = setInterval(reload, 10_000);
+    return () => clearInterval(timer);
+  }, [isAuction, open, confirming, reload]);
 
   return (
     <div className="flex min-h-screen flex-col" style={{ background: "var(--surface-marketplace)" }}>
@@ -93,12 +123,15 @@ export default function ItemDetailPage() {
                       key={m.id}
                       className="mb-2 flex cursor-pointer items-center gap-3 p-3 text-sm"
                       style={{
-                        border: `1px solid ${methodId === m.id ? "var(--philmart-navy-deep)" : "var(--border-subtle)"}`,
+                        border: `1px solid ${methodId === m.id ? "var(--philmart-navy-ink)" : "var(--border-subtle)"}`,
                         borderRadius: 4,
                         color: "var(--text-primary)",
                       }}
                     >
-                      <input type="radio" name="method" checked={methodId === m.id} onChange={() => setMethodId(m.id)} />
+                      <input type="radio" name="method" checked={methodId === m.id} onChange={() => {
+                          setMethodId(m.id);
+                          setMethodPicked(true);
+                        }} />
                       <span className="font-semibold">{m.name}</span>
                       <span className="ml-auto text-[11px]" style={{ color: "var(--text-muted)" }}>
                         {m.methodKind === "collection" ? "Collection" : "Shipping"}
@@ -122,7 +155,16 @@ export default function ItemDetailPage() {
               </div>
 
               <Box title={isAuction ? "Auction" : "Buy Now"}>
-                {isAuction ? <AuctionSummary detail={detail} /> : (
+                {/* keyed on the server time so each refresh restarts the countdown from the server clock */}
+                {isAuction ? (
+                  <AuctionSummary
+                    key={detail.serverNow}
+                    detail={detail}
+                    onElapsed={reload}
+                    historyOpen={historyOpen}
+                    onHistoryToggle={setHistoryOpen}
+                  />
+                ) : (
                   <>
                     <p className="text-xs" style={{ color: "var(--text-muted)" }}>Item price</p>
                     <p className="mb-5 font-display text-3xl font-bold" style={{ color: "var(--text-primary)" }}>
@@ -185,7 +227,7 @@ function ImagesAndDescription({ detail }: { detail: ListingDetail }) {
               type="button"
               onClick={() => setCurrent(i)}
               className="h-14 w-16 overflow-hidden"
-              style={{ border: `2px solid ${i === current ? "var(--philmart-navy-deep)" : "var(--border-subtle)"}`, borderRadius: 4 }}
+              style={{ border: `2px solid ${i === current ? "var(--philmart-navy-ink)" : "var(--border-subtle)"}`, borderRadius: 4 }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={src} alt="" className="h-full w-full object-cover" />
@@ -221,8 +263,34 @@ function ImagesAndDescription({ detail }: { detail: ListingDetail }) {
   );
 }
 
-function AuctionSummary({ detail }: { detail: ListingDetail }) {
+const CLOSED_LABEL: Record<string, string> = {
+  sold: "Auction closed: sold to the highest bidder",
+  unsold: "Auction closed: no winning bid",
+  cancelled: "Auction cancelled",
+  withdrawn: "Auction withdrawn",
+  scheduled: "Auction not open yet",
+};
+
+function AuctionSummary({
+  detail,
+  onElapsed,
+  historyOpen,
+  onHistoryToggle,
+}: {
+  detail: ListingDetail;
+  onElapsed: () => void;
+  historyOpen: boolean;
+  onHistoryToggle: (open: boolean) => void;
+}) {
   const left = useServerCountdown(detail.endsAt, detail.serverNow);
+  const elapsed = left === "Closing…";
+
+  // at zero the server closes it within a few seconds; keep asking until it has
+  useEffect(() => {
+    if (!elapsed || detail.state !== "live") return;
+    const timer = setInterval(onElapsed, 3000);
+    return () => clearInterval(timer);
+  }, [elapsed, detail.state, onElapsed]);
 
   return (
     <div className="mb-5">
@@ -237,7 +305,7 @@ function AuctionSummary({ detail }: { detail: ListingDetail }) {
         {detail.reserveMet ? "Reserve met" : "Reserve not yet met"}
       </p>
       <p className="mt-3 text-sm font-semibold" style={{ color: "var(--accent-auction)" }}>
-        {detail.state === "live" ? left : `Auction ${detail.state}`}
+        {detail.state === "live" ? left : (CLOSED_LABEL[detail.state] ?? "Auction closed")}
       </p>
       {detail.softCloseSeconds && (
         <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
@@ -247,7 +315,12 @@ function AuctionSummary({ detail }: { detail: ListingDetail }) {
       )}
 
       {detail.bids.length > 0 && (
-        <details className="mt-4 text-xs" style={{ color: "var(--text-secondary)" }}>
+        <details
+          className="mt-4 text-xs"
+          style={{ color: "var(--text-secondary)" }}
+          open={historyOpen}
+          onToggle={(e) => onHistoryToggle(e.currentTarget.open)}
+        >
           <summary className="cursor-pointer font-semibold">Bid history</summary>
           <ul className="mt-2">
             {detail.bids.map((b) => (
@@ -276,8 +349,16 @@ function CommitAction({
   onStart: () => void;
 }) {
   const label = detail.listingType === "auction" ? "Place a bid" : "Continue to purchase";
+  // back to this item after signing in
+  const here = encodeURIComponent(`/item/${detail.listingID}`);
 
-  if (!open) return <Notice>This item is no longer available.</Notice>;
+  if (!open) {
+    return (
+      <Notice>
+        {detail.listingType === "auction" ? "Bidding has closed on this auction." : "This item is no longer available."}
+      </Notice>
+    );
+  }
 
   // D032: a deactivated Shop's storefront takes no new commitments
   if (!detail.shopActive && (detail.listingType !== "auction" || detail.bids.length === 0)) {
@@ -286,7 +367,7 @@ function CommitAction({
 
   if (!signedIn) {
     return (
-      <Link href="/login">
+      <Link href={`/login?next=${here}`}>
         <Button type="button">Sign in to {detail.listingType === "auction" ? "bid" : "buy"}</Button>
       </Link>
     );
@@ -357,6 +438,21 @@ function ConfirmModal({
   const saved = defaults.find((x) => x.deliveryMethodID === methodId);
   const destination = override ?? saved?.address ?? null;
 
+  // B02: an alternative address needs street, city and postal code before it
+  // can be confirmed. The server refuses a blank one as well.
+  const overrideComplete =
+    !!override && !!override.addressLine1.trim() && !!override.city.trim() && !!(override.postalCode ?? "").trim();
+  const addressMissing =
+    !isAuction && !!method?.requiresAddress && (override ? !overrideComplete : !saved?.address);
+
+  // B03: below the minimum next bid can't be confirmed (the server refuses it too)
+  const amountMinor = Math.round(Number(amount) * 100);
+  const minimumMinor = detail.nextMinimumBidMinor ?? 0;
+  const bidTooLow = isAuction && (!Number.isFinite(amountMinor) || amountMinor < minimumMinor);
+
+  // B05: only say a change applies to this purchase where something can be changed
+  const editable = !isAuction && !!method && (method.requiresAddress || method.requiresPickupPoint);
+
   async function confirm() {
     if (!detail.commitment || !method) return;
     setBusy(true);
@@ -426,8 +522,12 @@ function ConfirmModal({
               <p className="font-semibold" style={{ color: "var(--text-primary)" }}>{formatMoney(detail.priceMinor)}</p>
             )}
             {isAuction && (
-              <p className="mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                Minimum {formatMoney(detail.nextMinimumBidMinor)}
+              <p
+                className="mt-1 text-[11px]"
+                role={bidTooLow ? "alert" : undefined}
+                style={{ color: bidTooLow ? "var(--accent-danger)" : "var(--text-muted)" }}
+              >
+                {bidTooLow ? `Your bid must be at least ${formatMoney(minimumMinor)}` : `Minimum ${formatMoney(minimumMinor)}`}
               </p>
             )}
           </div>
@@ -451,7 +551,14 @@ function ConfirmModal({
           {method?.requiresAddress && (
             <div>
               <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                Destination: {destination ? `${destination.addressLine1}, ${destination.city}` : "no saved address"}
+                Destination:{" "}
+                {override
+                  ? overrideComplete
+                    ? `${override.addressLine1}, ${override.city}, ${override.postalCode}`
+                    : "enter the street address, city and postal code below"
+                  : destination
+                    ? `${destination.addressLine1}, ${destination.city}`
+                    : "no saved address"}
               </p>
               {!isAuction && (
                 <AddressOverride value={override} onChange={setOverride} />
@@ -459,9 +566,16 @@ function ConfirmModal({
             </div>
           )}
 
-          <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-            A change here applies to this {isAuction ? "bid" : "purchase"} only. Your saved preferences stay as they are.
-          </p>
+          {editable && (
+            <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              A change here applies to this purchase only. Your saved preferences stay as they are.
+            </p>
+          )}
+          {isAuction && (
+            <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              This is your saved preference. If you win, delivery is confirmed when the Shop prepares your invoice.
+            </p>
+          )}
         </div>
 
         {detail.commitment && (
@@ -481,7 +595,7 @@ function ConfirmModal({
 
         <div className="grid grid-cols-2 gap-4">
           <Button type="button" variant="secondary" onClick={onClose}>Back</Button>
-          <Button type="button" onClick={confirm} disabled={!accepted || busy || !method}>
+          <Button type="button" onClick={confirm} disabled={!accepted || busy || !method || addressMissing || bidTooLow}>
             {isAuction ? "Confirm bid" : "Confirm purchase"}
           </Button>
         </div>
@@ -496,7 +610,7 @@ function AddressOverride({ value, onChange }: { value: Address | null; onChange:
       <button
         type="button"
         className="mt-1 text-xs font-semibold hover:underline"
-        style={{ color: "var(--philmart-navy-deep)" }}
+        style={{ color: "var(--philmart-navy-ink)" }}
         onClick={() => onChange({ addressLine1: "", city: "", postalCode: "", countryCode: "ZA" })}
       >
         Send this one somewhere else
@@ -591,10 +705,10 @@ function SaveButton({ listingId }: { listingId: string }) {
       aria-pressed={saved}
       className="px-4 py-2 text-sm font-semibold disabled:opacity-50"
       style={{
-        border: "1px solid var(--philmart-navy-deep)",
+        border: "1px solid var(--philmart-navy-ink)",
         borderRadius: 4,
         background: saved ? "var(--philmart-navy-deep)" : "var(--surface-card)",
-        color: saved ? "#ffffff" : "var(--philmart-navy-deep)",
+        color: saved ? "#ffffff" : "var(--philmart-navy-ink)",
       }}
     >
       {saved ? "♥ Saved" : "♡ Save item"}

@@ -59,6 +59,31 @@ public class ShopIsolationTests(DatabaseFixture db)
     }
 
     [Fact]
+    [Trait("BR", "BR-08-R06")]
+    [Trait("BR", "BR-08-R08")]
+    public async Task Another_shops_items_stay_out_of_the_workspace_even_when_public()
+    {
+        var a = await db.Data.CreateShop();
+        var b = await db.Data.CreateShop();
+        // listed and sold items are public catalogue rows (migration 011), so
+        // the database alone won't keep them out of Shop B's stock list
+        Guid listedA = await db.Data.CreateItem(a, "listed");
+        Guid soldA = await db.Data.CreateItem(a, "sold_fulfilment_pending");
+        Guid ownB = await db.Data.CreateItem(b);
+        string tokenB = await db.Api.SignIn(b.AdminEmail, TestData.Password, "shop");
+        var client = db.Api.As(tokenB);
+
+        var list = await client.GetFromJsonAsync<JsonElement>("/api/items?pageSize=100");
+        var ids = list.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("id").GetGuid()).ToList();
+        Assert.Contains(ownB, ids);
+        Assert.DoesNotContain(listedA, ids);
+        Assert.DoesNotContain(soldA, ids);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/items/" + listedA)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/items/" + soldA + "/transitions")).StatusCode);
+    }
+
+    [Fact]
     [Trait("BR", "BR-08-R07")]
     public async Task Row_level_security_holds_even_without_the_api()
     {

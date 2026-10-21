@@ -10,3 +10,5 @@ Logs/
 
 .build/
 tests/bin-verify/
+evidence-out/
+__pycache__/

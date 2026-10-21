@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { AccountShell } from "@/components/layout/AccountShell";
 import { PublicFooter, PublicHeader } from "@/components/layout/PublicHeader";
 import { Button, ErrorNote, Field, inputStyle, Panel } from "@/components/ui/Form";
@@ -26,7 +27,14 @@ export default function SupportPage() {
     };
   }, []);
 
-  const body = receipt ? <Confirmation receipt={receipt} isBuyer={isBuyer} /> : <SupportForm categories={categories} isBuyer={isBuyer} onSent={setReceipt} />;
+  // useSearchParams in the form needs a Suspense boundary or the static build bails out
+  const body = receipt ? (
+    <Confirmation receipt={receipt} isBuyer={isBuyer} />
+  ) : (
+    <Suspense>
+      <SupportForm categories={categories} isBuyer={isBuyer} onSent={setReceipt} />
+    </Suspense>
+  );
 
   if (isBuyer) {
     return <AccountShell screenId="SCR-PUB-015">{body}</AccountShell>;
@@ -59,6 +67,11 @@ function SupportForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // /support?category=shops from the Open Your Shop page picks the category
+  // until the visitor chooses one themselves
+  const wanted = useSearchParams().get("category");
+  const selected = category || (wanted && categories.some((c) => c.value === wanted) ? wanted : "");
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -66,7 +79,7 @@ function SupportForm({
     try {
       onSent(
         await api.support.submit({
-          category,
+          category: selected,
           subject,
           relatedReference: related || undefined,
           message,
@@ -105,7 +118,7 @@ function SupportForm({
         )}
 
         <Field label="Category *" htmlFor="category">
-          <select id="category" required value={category} onChange={(e) => setCategory(e.target.value)} style={{ ...inputStyle, maxWidth: 370 }}>
+          <select id="category" required value={selected} onChange={(e) => setCategory(e.target.value)} style={{ ...inputStyle, maxWidth: 370 }}>
             <option value="">Select category</option>
             {categories.map((c) => (
               <option key={c.value} value={c.value}>{c.label}</option>

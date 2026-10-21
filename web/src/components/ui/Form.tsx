@@ -58,7 +58,7 @@ export function Button({
 }) {
   const colours = {
     primary: { background: "var(--philmart-navy-deep)", color: "#ffffff", border: "1px solid var(--philmart-navy-deep)" },
-    secondary: { background: "var(--surface-card)", color: "var(--philmart-navy-deep)", border: "1px solid var(--philmart-navy-deep)" },
+    secondary: { background: "var(--surface-card)", color: "var(--philmart-navy-ink)", border: "1px solid var(--philmart-navy-ink)" },
     danger: { background: "var(--accent-danger)", color: "#ffffff", border: "1px solid var(--accent-danger)" },
   }[variant];
 
@@ -103,6 +103,8 @@ export function Notice({ children }: { children: ReactNode }) {
         border: "1px solid var(--border-subtle)",
         borderRadius: 4,
         background: "var(--surface-card-warm)",
+        // long invitation links must wrap on a phone
+        overflowWrap: "anywhere",
       }}
     >
       {children}

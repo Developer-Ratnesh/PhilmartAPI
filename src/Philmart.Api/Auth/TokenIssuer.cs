@@ -15,6 +15,8 @@ public class TokenIssuer(AuthSettings settings)
     {
         var claims = new List<Claim>();
         claims.Add(new Claim(JwtRegisteredClaimNames.Sub, user.ActorID.ToString()));
+        // so Sign out can refuse this one token (N03)
+        claims.Add(new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")));
         claims.Add(new Claim(JwtRegisteredClaimNames.Email, user.Email));
         claims.Add(new Claim(TenantContext.ActorKindClaim, user.ActorKind));
 

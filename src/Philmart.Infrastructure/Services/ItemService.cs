@@ -18,11 +18,13 @@ public class ItemService(
 {
     public async Task<ItemDTO?> GetById(Guid id, CancellationToken cancellationToken = default)
     {
+        Guid shopId = RequireShop();
+
         using (var context = contextFactory.CreateDbContext())
         {
             var now = await clock.Now();
 
-            var item = await context.ItemItems.Include(i => i.ItemImages).Where(x => x.ID == id).FirstOrDefaultAsync(cancellationToken);
+            var item = await context.ItemItems.Include(i => i.ItemImages).Where(x => x.ID == id && x.ShopID == shopId).FirstOrDefaultAsync(cancellationToken);
 
             if (item == null)
             {
@@ -45,14 +47,15 @@ public class ItemService(
     public async Task<PagedResult<ItemDTO>> Search(ItemSearchRequest request, CancellationToken cancellationToken = default)
     {
         var page = request.Page ?? new PageRequest();
+        Guid shopId = RequireShop();
 
         using (var context = contextFactory.CreateDbContext())
         {
             var now = await clock.Now();
 
-            // no shop filter here, the database security rules already limit
-            // this to the user's own shop
-            var query = context.ItemItems.Include(i => i.ItemImages).AsNoTracking();
+            // the database rules let anyone read listed and sold items (they're
+            // public catalogue, migration 011), so the shop filter has to be here
+            var query = context.ItemItems.Include(i => i.ItemImages).AsNoTracking().Where(x => x.ShopID == shopId);
 
             if (!string.IsNullOrWhiteSpace(request.State))
             {
@@ -102,9 +105,11 @@ public class ItemService(
 
     public async Task<List<ItemTransitionOption>> GetTransitions(Guid id, CancellationToken cancellationToken = default)
     {
+        Guid shopId = RequireShop();
+
         using (var context = contextFactory.CreateDbContext())
         {
-            string? state = await context.ItemItems.Where(x => x.ID == id).Select(x => x.State).FirstOrDefaultAsync(cancellationToken);
+            string? state = await context.ItemItems.Where(x => x.ID == id && x.ShopID == shopId).Select(x => x.State).FirstOrDefaultAsync(cancellationToken);
 
             if (state == null)
             {
@@ -135,9 +140,11 @@ public class ItemService(
             throw new NotAuthorisedException("You don't have permission to change the state of an item.");
         }
 
+        Guid shopId = RequireShop();
+
         using (var context = contextFactory.CreateDbContext())
         {
-            var item = await context.ItemItems.FirstOrDefaultAsync(x => x.ID == id, cancellationToken);
+            var item = await context.ItemItems.FirstOrDefaultAsync(x => x.ID == id && x.ShopID == shopId, cancellationToken);
 
             if (item == null)
             {
@@ -186,13 +193,15 @@ public class ItemService(
 
     public async Task<List<ItemDTO>> GetAgeing(int minimumDays, CancellationToken cancellationToken = default)
     {
+        Guid shopId = RequireShop();
+
         using (var context = contextFactory.CreateDbContext())
         {
             var now = await clock.Now();
             var cutoff = now.AddDays(-minimumDays);
 
             var rows = await context.ItemItems.Include(i => i.ItemImages).AsNoTracking()
-                .Where(x => x.State == PhilmartConstants.ItemState.ReadyToList && x.ReadyToListSince != null && x.ReadyToListSince <= cutoff)
+                .Where(x => x.ShopID == shopId && x.State == PhilmartConstants.ItemState.ReadyToList && x.ReadyToListSince != null && x.ReadyToListSince <= cutoff)
                 .OrderBy(x => x.ReadyToListSince)
                 .ToListAsync(cancellationToken);
 
@@ -205,6 +214,16 @@ public class ItemService(
 
             return items;
         }
+    }
+
+    private Guid RequireShop()
+    {
+        if (!tenant.IsShopUser || tenant.ShopId == null)
+        {
+            throw new NotAuthorisedException("Sign in as a Shop user to do this.");
+        }
+
+        return tenant.ShopId.Value;
     }
 
     private static ItemDTO ToDto(ItemItem item, DateTimeOffset now)

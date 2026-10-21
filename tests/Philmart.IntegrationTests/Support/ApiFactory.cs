@@ -25,6 +25,7 @@ public class ApiFactory(string connectionString) : WebApplicationFactory<Program
         builder.UseSetting("Auth:SigningKey", "integration-tests-only-signing-key-0123456789");
         builder.UseSetting("Web:BaseUrl", "http://test.local");
         builder.UseSetting("Support:RequestsPerHour", "1000");
+        builder.UseSetting("Auth:PinRequestsPer10Minutes", "100000");
 
         builder.ConfigureTestServices(services =>
         {

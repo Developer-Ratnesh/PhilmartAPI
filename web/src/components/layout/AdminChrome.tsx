@@ -3,7 +3,7 @@ import { Lockup } from "@/components/brand/Lockup";
 
 // Admin header and footer (SCR-ADM-001), shared by every admin screen.
 
-export function AdminTopBar({ user }: { user?: { name: string } }) {
+export function AdminTopBar({ user, onLogout }: { user?: { name: string }; onLogout?: () => void }) {
   return (
     <header style={{ background: "var(--philmart-navy-deep)" }}>
       <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3">
@@ -21,9 +21,9 @@ export function AdminTopBar({ user }: { user?: { name: string } }) {
             <span aria-hidden style={{ color: "rgb(255 255 255 / 0.4)" }}>
               |
             </span>
-            <a href="/admin/logout" className="hover:underline">
+            <button type="button" onClick={onLogout} className="hover:underline">
               Log out
-            </a>
+            </button>
           </div>
         )}
       </div>
@@ -56,14 +56,16 @@ export function AdminChrome({
   children,
   screenId,
   user,
+  onLogout,
 }: {
   children: ReactNode;
   screenId?: string;
   user?: { name: string };
+  onLogout?: () => void;
 }) {
   return (
     <div className="flex min-h-screen flex-col" style={{ background: "var(--surface-page)" }}>
-      <AdminTopBar user={user} />
+      <AdminTopBar user={user} onLogout={onLogout} />
       <main className="flex-1">{children}</main>
       <AdminFooter screenId={screenId} />
     </div>

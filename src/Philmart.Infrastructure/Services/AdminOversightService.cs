@@ -3,6 +3,7 @@ using Philmart.Application.Admin;
 using Philmart.Application.Common;
 using Philmart.Domain.Abstractions;
 using Philmart.Domain.Constants;
+using Philmart.Domain.Exceptions;
 using Philmart.Infrastructure.Persistence;
 using Philmart.Infrastructure.Persistence.Entities;
 
@@ -10,8 +11,88 @@ namespace Philmart.Infrastructure.Services;
 
 public class AdminOversightService(
     IDbContextFactory<PhilmartContext> contextFactory,
-    IServerClock clock) : IAdminOversightService
+    IServerClock clock,
+    ITenantContext tenant) : IAdminOversightService
 {
+    public Task DeactivateShop(Guid shopId, string reason, CancellationToken cancellationToken = default)
+    {
+        return ChangeShopStatus(shopId, reason, deactivate: true, cancellationToken);
+    }
+
+    public Task ReactivateShop(Guid shopId, string reason, CancellationToken cancellationToken = default)
+    {
+        return ChangeShopStatus(shopId, reason, deactivate: false, cancellationToken);
+    }
+
+    // D032: a deactivated Shop takes no new Buy Now or bids, but auctions that
+    // already have bids run to their end. That's enforced where commitments are
+    // made, so this only flips the status and records why.
+    private async Task ChangeShopStatus(Guid shopId, string reason, bool deactivate, CancellationToken cancellationToken)
+    {
+        if (!tenant.IsPlatformAdmin)
+        {
+            throw new NotAuthorisedException("Only a PHILMART administrator can do this.");
+        }
+
+        string why = (reason ?? string.Empty).Trim();
+        if (why.Length == 0)
+        {
+            throw new BusinessRuleViolationException(deactivate ? "Give a reason for deactivating this Shop." : "Give a reason for reactivating this Shop.", "D031");
+        }
+
+        if (why.Length > 1000)
+        {
+            throw new BusinessRuleViolationException("Keep the reason under 1000 characters.");
+        }
+
+        using (var context = contextFactory.CreateDbContext())
+        {
+            string? status = await context.ShopShops
+                .Where(x => x.ID == shopId)
+                .Select(x => x.Status)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (status == null)
+            {
+                throw new NotFoundException("Shop", shopId);
+            }
+
+            string from = deactivate ? PhilmartConstants.ShopStatus.Active : PhilmartConstants.ShopStatus.Deactivated;
+            if (status != from)
+            {
+                throw new BusinessRuleViolationException(deactivate ? "Only an active Shop can be deactivated." : "Only a deactivated Shop can be reactivated.");
+            }
+
+            await context.InTransaction(System.Data.IsolationLevel.ReadCommitted, async () =>
+            {
+                await context.Database.OpenConnectionAsync(cancellationToken);
+
+                if (deactivate)
+                {
+                    await context.Database.ExecuteSqlAsync(
+                        $@"UPDATE philmart.Shop_Shop
+                              SET Status = 'deactivated', DeactivatedAt = philmart.ServerNow(), DeactivationReason = {why}, UpdatedAt = philmart.ServerNow()
+                            WHERE ID = {shopId} AND Status = 'active'",
+                        cancellationToken);
+                }
+                else
+                {
+                    await context.Database.ExecuteSqlAsync(
+                        $@"UPDATE philmart.Shop_Shop
+                              SET Status = 'active', ReactivatedAt = philmart.ServerNow(), UpdatedAt = philmart.ServerNow()
+                            WHERE ID = {shopId} AND Status = 'deactivated'",
+                        cancellationToken);
+                }
+
+                await AuditSql.Add(context, tenant.ActorId, tenant.ActorKind, shopId, "Shop_Shop", shopId.ToString(),
+                    deactivate ? PhilmartConstants.AuditAction.ShopDeactivated : PhilmartConstants.AuditAction.ShopReactivated,
+                    new { From = status }, why, cancellationToken);
+
+                return true;
+            }, cancellationToken);
+        }
+    }
+
     // Superseded invoices are replaced by the invoice that superseded them, so
     // counting both would double the arrears.
     private const string FeeStandingSql =

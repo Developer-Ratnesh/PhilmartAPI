@@ -1,19 +1,21 @@
 import type { Metadata } from "next";
-import { Source_Serif_4, Source_Sans_3 } from "next/font/google";
+import localFont from "next/font/local";
 import { ThemeProvider, themeInitScript } from "@/lib/theme";
 import "./globals.css";
 
-// serif for headings, sans for body. same superfamily so the metrics match
-const display = Source_Serif_4({
-  subsets: ["latin"],
-  weight: ["400", "600", "700"],
+// serif for headings, sans for body. same superfamily so the metrics match.
+// self-hosted latin variable files (OFL) because Turbopack in Next 16.3 can't
+// resolve next/font/google, and the build then doesn't need Google at all
+const display = localFont({
+  src: "./fonts/SourceSerif4-latin.woff2",
+  weight: "400 700",
   variable: "--font-philmart-display",
   display: "swap",
 });
 
-const sans = Source_Sans_3({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const sans = localFont({
+  src: "./fonts/SourceSans3-latin.woff2",
+  weight: "400 700",
   variable: "--font-philmart-sans",
   display: "swap",
 });

@@ -76,10 +76,19 @@ public class AuthService(
             // catalogue, so it's sent straight out and never stored.
             if (canSignIn && emailSender.IsConfigured)
             {
-                await emailSender.Send(email, "Your PHILMART sign-in PIN",
-                    "Your sign-in PIN is " + challenge.Pin + ". It expires in 10 minutes.\n\n" +
-                    "If you didn't try to sign in to PHILMART, you can ignore this email.\n",
-                    cancellationToken);
+                // A mail server failure answers the same as everything else. An
+                // error here only for registered emails would give them away.
+                try
+                {
+                    await emailSender.Send(email, "Your PHILMART sign-in PIN",
+                        "Your sign-in PIN is " + challenge.Pin + ". It expires in 10 minutes.\n\n" +
+                        "If you didn't try to sign in to PHILMART, you can ignore this email.\n",
+                        cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogError(ex, "Sign-in PIN email to {Email} could not be sent", email);
+                }
             }
 
             if (canSignIn && configuration.GetValue("Auth:LogPins", false))
@@ -101,6 +110,10 @@ public class AuthService(
 
         using (var context = contextFactory.CreateDbContext())
         {
+            // nobody is signed in on this request yet, so without this RLS hides the
+            // buyer's legal acceptances and every document looks pending at each sign-in
+            await context.UseSystemSession(result.BuyerID, cancellationToken);
+
             var buyer = await context.Database
                 .SqlQuery<BuyerRow>($"SELECT ID, Email, FullName, PasswordHash, EmailVerifiedAt, RegistrationCompletedAt, RegistrationStep, DisabledAt FROM philmart.Buy_Buyer WHERE ID = {result.BuyerID}")
                 .FirstOrDefaultAsync(cancellationToken);
@@ -118,6 +131,9 @@ public class AuthService(
     {
         using (var context = contextFactory.CreateDbContext())
         {
+            // called before the buyer has a session (registration PIN), same reason as above
+            await context.UseSystemSession(buyerId, cancellationToken);
+
             var buyer = await context.Database
                 .SqlQuery<BuyerRow>($"SELECT ID, Email, FullName, PasswordHash, EmailVerifiedAt, RegistrationCompletedAt, RegistrationStep, DisabledAt FROM philmart.Buy_Buyer WHERE ID = {buyerId}")
                 .FirstAsync(cancellationToken);
@@ -173,13 +189,26 @@ public class AuthService(
         }
     }
 
-    public async Task<AccessCheckDTO> CheckAccess(string actorKind, Guid actorId, Guid? shopId, CancellationToken cancellationToken = default)
+    public async Task<AccessCheckDTO> CheckAccess(string actorKind, Guid actorId, Guid? shopId, string? tokenId, CancellationToken cancellationToken = default)
     {
         var result = new AccessCheckDTO();
 
         using (var context = contextFactory.CreateDbContext())
         {
             await context.UseSystemSession(actorId, cancellationToken);
+
+            // N03: signed out, so this token is finished even though it hasn't expired
+            if (tokenId != null)
+            {
+                bool revoked = await context.Database
+                    .SqlQuery<int>($"SELECT COUNT(*) AS Value FROM philmart.Sys_RevokedSession WHERE TokenID = {tokenId}")
+                    .FirstAsync(cancellationToken) > 0;
+
+                if (revoked)
+                {
+                    return result;
+                }
+            }
 
             if (actorKind == PhilmartConstants.ActorKind.ShopUser)
             {
@@ -223,6 +252,29 @@ public class AuthService(
         }
 
         return result;
+    }
+
+    public async Task SignOut(string tokenId, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
+    {
+        if (tenant.ActorId == null || string.IsNullOrWhiteSpace(tokenId) || tokenId.Length > 64)
+        {
+            return;
+        }
+
+        using (var context = contextFactory.CreateDbContext())
+        {
+            await context.UseSystemSession(tenant.ActorId, cancellationToken);
+
+            // signing out twice is fine, the second time there's nothing to do
+            await context.Database.ExecuteSqlAsync(
+                $@"IF NOT EXISTS (SELECT 1 FROM philmart.Sys_RevokedSession WHERE TokenID = {tokenId})
+                       INSERT INTO philmart.Sys_RevokedSession (TokenID, ActorKind, ActorID, ExpiresAt)
+                       VALUES ({tokenId}, {tenant.ActorKind}, {tenant.ActorId}, {expiresAt})",
+                cancellationToken);
+
+            await AuditSql.Add(context, tenant.ActorId, tenant.ActorKind, tenant.ShopId, "Sys_RevokedSession", tokenId,
+                "auth.sign_out", new { ExpiresAt = expiresAt }, cancellationToken: cancellationToken);
+        }
     }
 
     private async Task<SignedInUserDTO?> SignInShopUser(PhilmartContext context, string email, string password, string? shopReference, CancellationToken cancellationToken)

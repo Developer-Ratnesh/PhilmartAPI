@@ -25,7 +25,8 @@ export default function WorkspaceLoginPage() {
     try {
       const res = await api.auth.login(email, password, "shop", shopReference || undefined);
       saveSession(res.token, res.user);
-      router.push(res.user.permissions.includes("auction.manage") ? "/workspace/auctions" : "/workspace/users");
+      // every Shop user starts on the dashboard, whatever their permissions (SCR-SHP-002)
+      router.push("/workspace");
     } catch (err) {
       const message = errorText(err);
       if (message.includes("more than one Shop")) setNeedsShop(true);

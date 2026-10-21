@@ -133,6 +133,23 @@ public class RegistrationTests(DatabaseFixture db)
         Assert.False(string.IsNullOrEmpty(await db.Api.SignIn(buyer.Email, "", "buyer")));
     }
 
+    // M2 test round: the buyer was told to "review updated terms" at every sign-in
+    // because the sign-in request couldn't see their acceptances through RLS
+    [Fact]
+    [Trait("BR", "BR-01-R09")]
+    public async Task Signing_in_does_not_ask_for_terms_already_accepted()
+    {
+        var buyer = await db.Data.CreateBuyer();
+
+        var pin = await db.Api.CreateClient().PostAsJsonAsync("/api/auth/buyer/pin", new { email = buyer.Email });
+        string challenge = (await pin.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("challenge").GetString()!;
+        var verify = await db.Api.CreateClient().PostAsJsonAsync("/api/auth/buyer/verify", new { challenge, pin = KnownPins.Pin });
+        verify.EnsureSuccessStatusCode();
+
+        var user = (await verify.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("user");
+        Assert.Empty(user.GetProperty("pendingAcceptances").EnumerateArray());
+    }
+
     [Fact]
     [Trait("BR", "BR-01-R07")]
     [Trait("Decision", "D039")]
@@ -218,6 +235,35 @@ public class RegistrationTests(DatabaseFixture db)
 
         return await db.Api.As(token).PostAsJsonAsync("/api/listings/" + listing + "/buy",
             new { commitmentVersionID = commitment, deliveryMethodID = method, idempotencyKey = Guid.NewGuid().ToString() });
+    }
+
+    [Fact]
+    [Trait("BR", "BR-01")]
+    public async Task Personal_details_with_bad_values_are_refused_with_a_message()
+    {
+        string email = NewEmail();
+        var start = await db.Api.CreateClient().PostAsJsonAsync("/api/register", new { email });
+        string challenge = (await start.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("challenge").GetString()!;
+        var verify = await db.Api.CreateClient().PostAsJsonAsync("/api/register/verify", new { challenge, pin = KnownPins.Pin });
+        var client = db.Api.As((await verify.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("token").GetString()!);
+
+        object[] bad =
+        {
+            new { fullName = "", mobile = "0820000001", identificationType = "sa_id", identificationNumber = "8501015800084", dateOfBirth = "1985-01-01" },
+            new { fullName = "Reg Tester", mobile = "0820000001", identificationType = "sa_id", identificationNumber = "12345", dateOfBirth = "1985-01-01" },
+            new { fullName = "Reg Tester", mobile = "0820000001", identificationType = "passport", identificationNumber = "A1!", dateOfBirth = "1985-01-01" },
+            new { fullName = "Reg Tester", mobile = "0820000001", identificationType = "sa_id", identificationNumber = "8501015800084", dateOfBirth = "2999-01-01" },
+            new { fullName = "Reg Tester", mobile = "12", identificationType = "sa_id", identificationNumber = "8501015800084", dateOfBirth = "1985-01-01" },
+        };
+
+        foreach (var body in bad)
+        {
+            var response = await client.PutAsJsonAsync("/api/register/personal", body);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+            Assert.False(string.IsNullOrWhiteSpace((await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString()));
+        }
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/register/personal", Personal())).StatusCode);
     }
 
     private Task<int> EmailCount(Guid buyerId, string code)

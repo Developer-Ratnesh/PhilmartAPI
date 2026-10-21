@@ -1,4 +1,4 @@
-import { currentToken, type SignedInUser } from "@/lib/session";
+import { clearSession, currentToken, type SignedInUser } from "@/lib/session";
 
 // public/config.js sets this on the server we deploy to, so the API address
 // can change without a rebuild
@@ -30,6 +30,7 @@ export type MarketplaceItem = {
   priceMinor: number | null;
   // auctions only
   currentBidMinor: number | null;
+  startingPriceMinor: number | null;
   endsAt: string | null;
   bidCount: number;
   primaryImageUrl: string | null;
@@ -61,6 +62,8 @@ export type ClassificationOption = {
   code: string;
   name: string;
   sortOrder: number;
+  // area / country only
+  parentID?: string | null;
 };
 
 export type MarketplaceQuery = {
@@ -173,6 +176,7 @@ export type ShippingPreference = {
   available: boolean;
   pickupPointID?: string | null;
   useAddress?: boolean;
+  preferred?: boolean;
 };
 
 export type BidHistory = { sequenceNo: number; amountMinor: number; placedAt: string };
@@ -214,7 +218,7 @@ export type ListingDetail = {
 
 export type ShopProfile = { shopID: string; reference: string; name: string; blurb: string | null; active: boolean };
 
-export type PurchaseDefaults = { deliveryMethodID: string; pickupPointID: string | null; address: Address | null };
+export type PurchaseDefaults = { deliveryMethodID: string; available: boolean; preferred: boolean; pickupPointID: string | null; address: Address | null };
 export type PurchaseResult = { saleTransactionID: string; priceMinor: number; deliveryMethod: string };
 export type BidResult = { bidID: string; amountMinor: number; leading: boolean; endsAt: string; extendedClose: boolean };
 
@@ -249,6 +253,59 @@ export type ShopAuction = {
 
 export type ReadyItem = { itemID: string; reference: string; title: string; sellerMinimumPriceMinor: number | null };
 
+export type InviteResult = { shopUserID: string; invitationLink: string; emailSent: boolean };
+
+// SCR-SHP-002. A figure is null when the user's permissions don't cover it.
+export type ShopDashboard = {
+  asAt: string;
+  shopName: string;
+  readyToList: number | null;
+  activeFixedPrice: number | null;
+  activeAuctions: number | null;
+  scheduledAuctions: number | null;
+  itemsSoldThisYear: number | null;
+  salesValueThisYearMinor: number | null;
+  activeUsers: number | null;
+  pendingInvitations: number | null;
+  auctions: DashboardAuction[] | null;
+};
+
+export type DashboardAuction = {
+  listingID: string;
+  reference: string;
+  title: string;
+  state: "live" | "scheduled";
+  startsAt: string | null;
+  endsAt: string | null;
+  bidCount: number;
+  currentBidMinor: number | null;
+};
+
+// SCR-PUB-006.1
+export type BuyerProfile = {
+  email: string;
+  fullName: string | null;
+  mobile: string | null;
+  identificationType: string | null;
+  identificationNumber: string | null;
+  dateOfBirth: string | null;
+  registrationCompletedAt: string | null;
+  address: Address | null;
+  shippingPreferences: ShippingPreference[];
+};
+
+export type CommunicationPreferences = { outbidAlerts: boolean };
+
+export type LegalAcceptance = {
+  documentCode: string;
+  documentName: string;
+  version: string;
+  acceptanceMode: "accept" | "acknowledge";
+  context: "registration" | "buy_now" | "confirm_bid" | "shop_setup";
+  acceptedAt: string;
+  isCurrent: boolean;
+};
+
 export type CreateAuction = {
   itemID: string;
   startingPriceMinor: number;
@@ -259,6 +316,90 @@ export type CreateAuction = {
   softCloseSeconds: number | null;
   softCloseExtensionSeconds: number | null;
 };
+
+// D044/D045
+export type BuyerRestriction = {
+  id: string;
+  buyerID: string;
+  buyerEmail: string;
+  buyerName: string | null;
+  scope: "Shop_Shop" | "platform";
+  shopName: string | null;
+  reason: string;
+  imposedAt: string;
+  liftedAt: string | null;
+  liftReason: string | null;
+  canLift: boolean;
+};
+
+// the Shop workspace and the admin panel use the same calls under their own path
+export function restrictionsApi(base: "/api/shop/restrictions" | "/api/admin/restrictions") {
+  return {
+    list: () => request<BuyerRestriction[]>(base, { cache: "no-store" }),
+    restrict: (email: string, reason: string) => request<BuyerRestriction>(base, post({ email, reason })),
+    lift: (id: string, reason: string) => request<void>(`${base}/${id}/lift`, post({ reason })),
+  };
+}
+
+// Schedule A6 technical proof: invoice, Shop-recorded payment, reversal
+export type ShopSale = {
+  saleTransactionID: string;
+  listingReference: string;
+  title: string;
+  saleKind: "fixed_price" | "auction";
+  salePriceMinor: number;
+  soldAt: string;
+  buyerName: string | null;
+  invoiceID: string | null;
+  invoiceNumber: string | null;
+  invoiceStatus: "unpaid" | "part_paid" | "paid" | null;
+};
+
+export type InvoicePayment = {
+  paymentID: string;
+  amountMinor: number;
+  receivedOn: string;
+  paymentReference: string | null;
+  recordedAt: string;
+  reversesPaymentID: string | null;
+  reversalReason: string | null;
+  reversedByPaymentID: string | null;
+};
+
+export type InvoiceDetail = {
+  invoiceID: string;
+  invoiceNumber: string;
+  state: string;
+  status: "unpaid" | "part_paid" | "paid";
+  totalMinor: number;
+  paidMinor: number;
+  outstandingMinor: number;
+  issuedAt: string | null;
+  buyerName: string | null;
+  lines: { saleTransactionID: string | null; lineType: string; description: string; lineTotalMinor: number }[];
+  payments: InvoicePayment[];
+  ledger: {
+    entryID: number;
+    entryKind: string;
+    direction: "debit" | "credit";
+    amountMinor: number;
+    description: string;
+    reversesEntryID: number | null;
+    occurredAt: string;
+  }[];
+};
+
+// Sign out everywhere it matters: tell the API first, then forget the token.
+// If the API can't be reached the browser still signs out.
+export async function signOut() {
+  try {
+    if (currentToken()) await api.auth.logout();
+  } catch {
+    // already expired or offline, nothing more to undo
+  } finally {
+    clearSession();
+  }
+}
 
 export class ApiError extends Error {
   constructor(
@@ -331,6 +472,23 @@ export const api = {
       request<SignInResponse>("/api/auth/login", post({ email, password, kind, shopReference })),
 
     me: () => request<SignedInUser>("/api/auth/me", { cache: "no-store" }),
+
+    // N03: the server stops accepting this token, not just the browser forgetting it
+    logout: () => request<void>("/api/auth/logout", post()),
+  },
+
+  invoices: {
+    sales: () => request<ShopSale[]>("/api/shop/sales", { cache: "no-store" }),
+
+    issue: (saleId: string) => request<InvoiceDetail>(`/api/shop/sales/${saleId}/invoice`, post()),
+
+    get: (invoiceId: string) => request<InvoiceDetail>(`/api/shop/invoices/${invoiceId}`, { cache: "no-store" }),
+
+    recordPayment: (invoiceId: string, body: { amountMinor: number; receivedOn: string; paymentReference?: string; note?: string }) =>
+      request<InvoiceDetail>(`/api/shop/invoices/${invoiceId}/payments`, post(body)),
+
+    reverse: (paymentId: string, reason: string) =>
+      request<InvoiceDetail>(`/api/shop/payments/${paymentId}/reverse`, post({ reason })),
   },
 
   register: {
@@ -385,8 +543,10 @@ export const api = {
 
     permissions: () => request<Permission[]>("/api/shop/users/permissions"),
 
+    dashboard: () => request<ShopDashboard>("/api/shop/dashboard", { cache: "no-store" }),
+
     invite: (body: { email: string; fullName: string; permissions: string[] }) =>
-      request<{ shopUserID: string; invitationLink: string }>("/api/shop/users", post(body)),
+      request<InviteResult>("/api/shop/users", post(body)),
 
     setPermissions: (userId: string, permissions: string[]) =>
       request<void>(`/api/shop/users/${userId}/permissions`, { method: "PUT", body: JSON.stringify({ permissions }) }),
@@ -436,6 +596,17 @@ export const api = {
       ),
 
     themes: () => request<ClassificationOption[]>("/api/marketplace/classifications/themes"),
+
+    formats: () => request<ClassificationOption[]>("/api/marketplace/classifications/formats"),
+
+    stampStates: () => request<ClassificationOption[]>("/api/marketplace/classifications/stamp-states"),
+
+    shops: () => request<ClassificationOption[]>("/api/marketplace/shops"),
+  },
+
+  // the public Terms & Conditions page
+  legal: {
+    current: () => request<LegalDocument[]>("/api/legal", { cache: "no-store" }),
   },
 
   // buyers only, the API works out which buyer from the token
@@ -455,6 +626,21 @@ export const api = {
     viewed: (listingId: string) => request<void>(`/api/account/recent/${listingId}`, { method: "PUT" }),
 
     removeRecent: (listingId: string) => request<void>(`/api/account/recent/${listingId}`, { method: "DELETE" }),
+
+    profile: () => request<BuyerProfile>("/api/account/profile", { cache: "no-store" }),
+
+    updateMobile: (mobile: string) =>
+      request<void>("/api/account/profile/mobile", { method: "PUT", body: JSON.stringify({ mobile }) }),
+
+    updateAddress: (body: Address & { shippingPreferences: ShippingPreference[] }) =>
+      request<void>("/api/account/profile/address", { method: "PUT", body: JSON.stringify(body) }),
+
+    preferences: () => request<CommunicationPreferences>("/api/account/preferences", { cache: "no-store" }),
+
+    savePreferences: (body: CommunicationPreferences) =>
+      request<void>("/api/account/preferences", { method: "PUT", body: JSON.stringify(body) }),
+
+    legal: () => request<LegalAcceptance[]>("/api/account/legal", { cache: "no-store" }),
   },
 
   support: {
@@ -481,6 +667,13 @@ export const api = {
 
     shop: (shopId: string) =>
       request<AdminShop>(`/api/admin/shops/${shopId}`, { cache: "no-store" }),
+
+    // D031: manual and always with a reason
+    deactivateShop: (shopId: string, reason: string) =>
+      request<void>(`/api/admin/shops/${shopId}/deactivate`, post({ reason })),
+
+    reactivateShop: (shopId: string, reason: string) =>
+      request<void>(`/api/admin/shops/${shopId}/reactivate`, post({ reason })),
   },
 };
 
@@ -489,10 +682,12 @@ export function formatMoney(minor: number | null | undefined, symbol = "R"): str
   if (minor === null || minor === undefined) {
     return "—";
   }
-  return `${symbol} ${(minor / 100).toLocaleString("en-ZA", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  // G.5: always "R 1,200.00". The en-ZA locale gives "R 1 200,00" in some
+  // browsers and "R 1,200.00" in others, so don't leave it to the locale.
+  const negative = minor < 0;
+  const [rand, cents] = (Math.abs(minor) / 100).toFixed(2).split(".");
+  const grouped = rand.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${negative ? "-" : ""}${symbol} ${grouped}.${cents}`;
 }
 
 export function formatTimeLeft(endsAt: string | null): string | null {

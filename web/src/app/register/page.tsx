@@ -6,6 +6,7 @@ import { PublicFooter, PublicHeader } from "@/components/layout/PublicHeader";
 import { Button, ErrorNote, Field, inputStyle, Notice, Panel, PinInput, StepHeading } from "@/components/ui/Form";
 import { api, errorText, type DeliveryOption, type LegalDocument, type ShippingPreference } from "@/lib/api";
 import { saveSession, updateUser, useSession } from "@/lib/session";
+import { ShippingMethodsEditor, withPreferred } from "@/components/account/ShippingMethodsEditor";
 
 // BR-01. SCR-PUB-014.1 to 014.4. The buyer is registered only when step 4 is
 // accepted, and only then does the welcome email go (D036).
@@ -65,7 +66,7 @@ export default function RegisterPage() {
                 key={label}
                 className="px-2 py-2 text-center text-[11px] font-semibold"
                 style={{
-                  borderBottom: `3px solid ${reached ? "var(--philmart-navy-deep)" : "var(--border-subtle)"}`,
+                  borderBottom: `3px solid ${reached ? "var(--philmart-navy-ink)" : "var(--border-subtle)"}`,
                   color: reached ? "var(--text-primary)" : "var(--text-muted)",
                 }}
               >
@@ -167,7 +168,9 @@ function EmailStep() {
       <form onSubmit={verify}>
         <StepHeading number={2} title="Enter your 4-digit PIN" muted={!challenge} />
         <p className="mb-4 text-xs" style={{ color: "var(--text-muted)" }}>
-          {challenge ? "Enter the PIN we emailed you. Verifying your email lets you continue. It doesn't complete registration." : "Send a verification PIN first."}
+          {challenge
+            ? "Enter the PIN we emailed you. Verifying your email lets you continue. It doesn't complete registration. If this email already has a PHILMART account, we'll email you a sign-in link instead of a PIN."
+            : "Send a verification PIN first."}
         </p>
         <PinInput value={pin} onChange={setPin} disabled={!challenge || busy} />
         <Button disabled={!challenge || pin.length !== 4 || busy}>Verify email and continue</Button>
@@ -175,7 +178,7 @@ function EmailStep() {
 
       <p className="mt-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
         Already registered?{" "}
-        <Link href="/login" className="font-semibold hover:underline" style={{ color: "var(--philmart-navy-deep)" }}>
+        <Link href="/login" className="font-semibold hover:underline" style={{ color: "var(--philmart-navy-ink)" }}>
           Sign in
         </Link>
       </p>
@@ -193,6 +196,27 @@ function PersonalStep({ onDone }: { onDone: () => void }) {
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // coming back to this step (or resuming later) shows what was saved
+  useEffect(() => {
+    let cancelled = false;
+    api.account
+      .profile()
+      .then((p) => {
+        if (cancelled || !p.fullName) return;
+        setForm({
+          fullName: p.fullName ?? "",
+          mobile: p.mobile ?? "",
+          identificationType: p.identificationType ?? "sa_id",
+          identificationNumber: p.identificationNumber ?? "",
+          dateOfBirth: p.dateOfBirth ?? "",
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -252,21 +276,39 @@ function AddressStep({ onBack, onDone }: { onBack: () => void; onDone: () => voi
 
   useEffect(() => {
     let cancelled = false;
-    api.register
-      .deliveryOptions()
-      .then((list) => {
+    // Back from step 4 keeps what was entered (checklist R.6), so start from the saved data
+    Promise.all([
+      api.register.deliveryOptions(),
+      api.account.profile().catch(() => null),
+      api.account.preferences().catch(() => null),
+    ])
+      .then(([list, profile, preferences]) => {
         if (cancelled) return;
         setMethods(list);
+        if (preferences) setOutbidAlerts(preferences.outbidAlerts);
+        if (profile?.address) {
+          const a = profile.address;
+          setAddress({
+            addressLine1: a.addressLine1,
+            addressLine2: a.addressLine2 ?? "",
+            city: a.city,
+            province: a.province ?? "",
+            postalCode: a.postalCode ?? "",
+            countryCode: a.countryCode,
+          });
+        }
         const initial: Record<string, ShippingPreference> = {};
         for (const m of list) {
+          const saved = profile?.shippingPreferences.find((p) => p.deliveryMethodID === m.id);
           initial[m.id] = {
             deliveryMethodID: m.id,
-            available: true,
-            pickupPointID: m.requiresPickupPoint ? (m.pickupPoints[0]?.id ?? null) : null,
-            useAddress: m.requiresAddress,
+            available: saved?.available ?? true,
+            pickupPointID: m.requiresPickupPoint ? (saved?.pickupPointID ?? m.pickupPoints[0]?.id ?? null) : null,
+            useAddress: m.requiresAddress || (saved?.useAddress ?? false),
+            preferred: saved?.preferred ?? false,
           };
         }
-        setPrefs(initial);
+        setPrefs(withPreferred(initial, list));
       })
       .catch((err) => !cancelled && setError(errorText(err)));
     return () => {
@@ -318,47 +360,12 @@ function AddressStep({ onBack, onDone }: { onBack: () => void; onDone: () => voi
           Shipping preferences
         </h3>
         <p className="mb-4 text-xs" style={{ color: "var(--text-muted)" }}>
-          Tell us which methods work where you live. Your choice here becomes the default at purchase, and you can change it for any single order.
+          Tick the methods that work where you live and pick your preferred one. It becomes the default at purchase, and you can change it for any single order.
         </p>
 
         {methods.length === 0 && <Notice>No delivery methods are set up yet.</Notice>}
 
-        {methods.map((m) => {
-          const pref = prefs[m.id];
-          if (!pref) return null;
-          return (
-            <div key={m.id} className="mb-3 p-3" style={{ border: "1px solid var(--border-subtle)", borderRadius: 4 }}>
-              <label className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                <input
-                  type="checkbox"
-                  checked={pref.available}
-                  onChange={(e) => setPrefs((p) => ({ ...p, [m.id]: { ...pref, available: e.target.checked } }))}
-                />
-                {m.name}
-              </label>
-              {pref.available && m.requiresPickupPoint && (
-                <select
-                  aria-label={`Default pickup point for ${m.name}`}
-                  className="mt-2"
-                  value={pref.pickupPointID ?? ""}
-                  onChange={(e) => setPrefs((p) => ({ ...p, [m.id]: { ...pref, pickupPointID: e.target.value } }))}
-                  style={inputStyle}
-                >
-                  {m.pickupPoints.map((pp) => (
-                    <option key={pp.id} value={pp.id}>
-                      {pp.name} {pp.address ? `— ${pp.address}` : ""}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {pref.available && m.requiresAddress && (
-                <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
-                  Delivered to the address above.
-                </p>
-              )}
-            </div>
-          );
-        })}
+        <ShippingMethodsEditor methods={methods} prefs={prefs} onChange={setPrefs} />
 
         <h3 className="mb-2 mt-6 font-display text-base font-semibold" style={{ color: "var(--text-primary)" }}>
           Communication

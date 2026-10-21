@@ -120,18 +120,31 @@ public class ShopUserService(
 
             // Invitations aren't in the email catalogue, so the link goes straight out
             // and the admin also sees it, in case the email doesn't arrive.
+            bool sent = false;
+
             if (emailSender.IsConfigured)
             {
-                await emailSender.Send(email, "You've been invited to a PHILMART Shop",
-                    "Hello " + name + ",\n\n" +
-                    "You've been added as a user of a Shop on PHILMART. Open this link to set your password and sign in:\n\n" +
-                    link + "\n\nThe link expires, so please use it soon.\n",
-                    cancellationToken);
+                // The user is already created, so a mail server failure mustn't
+                // undo that. The admin is told and copies the link instead.
+                try
+                {
+                    await emailSender.Send(email, "You've been invited to a PHILMART Shop",
+                        "Hello " + name + ",\n\n" +
+                        "You've been added as a user of a Shop on PHILMART. Open this link to set your password and sign in:\n\n" +
+                        link + "\n\nThe link expires, so please use it soon.\n",
+                        cancellationToken);
+
+                    sent = true;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogError(ex, "Invitation email to {Email} could not be sent", email);
+                }
             }
 
-            logger.LogInformation("Shop user {Email} invited. Invitation link: {Link}", email, link);
+            logger.LogInformation("Shop user {Email} invited. Email sent: {Sent}. Invitation link: {Link}", email, sent, link);
 
-            return new InviteResultDTO { ShopUserID = userId, InvitationLink = link };
+            return new InviteResultDTO { ShopUserID = userId, InvitationLink = link, EmailSent = sent };
         }
     }
 

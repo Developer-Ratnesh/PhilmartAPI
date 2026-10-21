@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Philmart.Api.Configuration;
 using Philmart.Application.Admin;
 using Philmart.Application.Common;
+using Philmart.Application.Restrictions;
 
 namespace Philmart.Api.Controllers;
 
@@ -12,7 +13,7 @@ namespace Philmart.Api.Controllers;
 [RequiresPlatformAdmin]
 [Route("api/admin")]
 [Produces("application/json")]
-public class AdminController(IAdminOversightService oversight) : ControllerBase
+public class AdminController(IAdminOversightService oversight, IBuyerRestrictionService restrictions) : ControllerBase
 {
     [HttpGet("dashboard")]
     public async Task<ActionResult<AdminDashboardDTO>> Dashboard(CancellationToken cancellationToken)
@@ -48,5 +49,39 @@ public class AdminController(IAdminOversightService oversight) : ControllerBase
         }
 
         return Ok(shop);
+    }
+
+    [HttpPost("shops/{id:guid}/deactivate")]
+    public async Task<IActionResult> Deactivate(Guid id, ShopStatusChangeRequest request, CancellationToken cancellationToken)
+    {
+        await oversight.DeactivateShop(id, request.Reason, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("shops/{id:guid}/reactivate")]
+    public async Task<IActionResult> Reactivate(Guid id, ShopStatusChangeRequest request, CancellationToken cancellationToken)
+    {
+        await oversight.ReactivateShop(id, request.Reason, cancellationToken);
+        return NoContent();
+    }
+
+    // D045: PHILMART's platform-wide buyer restrictions; Shop ones are listed too
+    [HttpGet("restrictions")]
+    public Task<List<BuyerRestrictionDTO>> Restrictions(CancellationToken cancellationToken)
+    {
+        return restrictions.List(cancellationToken);
+    }
+
+    [HttpPost("restrictions")]
+    public Task<BuyerRestrictionDTO> Restrict(RestrictBuyerRequest request, CancellationToken cancellationToken)
+    {
+        return restrictions.Restrict(request, cancellationToken);
+    }
+
+    [HttpPost("restrictions/{id:guid}/lift")]
+    public async Task<IActionResult> Lift(Guid id, LiftRestrictionRequest request, CancellationToken cancellationToken)
+    {
+        await restrictions.Lift(id, request, cancellationToken);
+        return NoContent();
     }
 }

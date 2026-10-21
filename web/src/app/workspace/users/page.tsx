@@ -57,7 +57,7 @@ export default function UsersPage() {
         Manage Shop users and assign permissions directly to each user.
       </p>
 
-      <div className="mb-6 flex items-center justify-between gap-4 p-4" style={{ background: "var(--surface-card)", border: "1px solid var(--border-subtle)", borderRadius: 4 }}>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4 p-4" style={{ background: "var(--surface-card)", border: "1px solid var(--border-subtle)", borderRadius: 4 }}>
         <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
           <strong>Shop Administrator</strong> has the full permission set, which can&apos;t be reduced. All changes are audited.
         </p>
@@ -94,7 +94,7 @@ export default function UsersPage() {
                   <td className="px-4 py-3 text-xs">
                     {!u.isAdministrator && (
                       <>
-                        <button type="button" className="mr-3 font-semibold hover:underline" style={{ color: "var(--philmart-navy-deep)" }} onClick={() => setEditing(u)}>
+                        <button type="button" className="mr-3 font-semibold hover:underline" style={{ color: "var(--philmart-navy-ink)" }} onClick={() => setEditing(u)}>
                           Edit
                         </button>
                         {u.id !== session?.user.actorID && (
@@ -166,7 +166,12 @@ function UserDialog({
         onSaved(`${user.fullName}'s permissions were updated.`);
       } else {
         const res = await api.shop.invite({ email, fullName, permissions: chosen });
-        onSaved(`Invitation created. Send ${fullName} this link to set their password: ${res.invitationLink}`);
+        // the link is shown either way, in case the email ends up in spam
+        onSaved(
+          res.emailSent
+            ? `Invitation emailed to ${email}. If it doesn't arrive (check spam), send ${fullName} this link instead: ${res.invitationLink}`
+            : `Invitation created, but the email couldn't be sent. Send ${fullName} this link to set their password: ${res.invitationLink}`,
+        );
       }
     } catch (err) {
       setError(errorText(err));

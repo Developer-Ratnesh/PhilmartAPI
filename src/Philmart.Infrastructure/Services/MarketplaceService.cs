@@ -29,7 +29,9 @@ public class MarketplaceService(IDbContextFactory<PhilmartContext> contextFactor
 
             if (filter.AreaCountryID != null)
             {
-                query = query.Where(x => x.Item.AreaCountryID == filter.AreaCountryID);
+                // a region also matches everything under it, so Africa finds South Africa
+                var areaIds = await AreaAndBelow(context, filter.AreaCountryID.Value, cancellationToken);
+                query = query.Where(x => x.Item.AreaCountryID != null && areaIds.Contains(x.Item.AreaCountryID.Value));
             }
 
             if (filter.TypeID != null)
@@ -202,11 +204,15 @@ public class MarketplaceService(IDbContextFactory<PhilmartContext> contextFactor
     {
         switch (sort)
         {
+            // the price the card shows: fixed price, else the current bid, else
+            // the starting price (client review B01)
             case "price_asc":
-                return query.OrderBy(x => x.PriceMinor ?? x.StartingPriceMinor);
+                return query.OrderBy(x => x.PriceMinor ?? x.ListBids.Max(b => (long?)b.AmountMinor) ?? x.StartingPriceMinor)
+                            .ThenBy(x => x.ID);
 
             case "price_desc":
-                return query.OrderByDescending(x => x.PriceMinor ?? x.StartingPriceMinor);
+                return query.OrderByDescending(x => x.PriceMinor ?? x.ListBids.Max(b => (long?)b.AmountMinor) ?? x.StartingPriceMinor)
+                            .ThenBy(x => x.ID);
 
             case "ending":
                 return query.OrderBy(x => x.EndsAt ?? DateTimeOffset.MaxValue);
@@ -226,6 +232,7 @@ public class MarketplaceService(IDbContextFactory<PhilmartContext> contextFactor
         dto.ShopID = listing.ShopID;
         dto.ShopName = listing.Shop.TradingName;
         dto.PriceMinor = listing.PriceMinor;
+        dto.StartingPriceMinor = listing.StartingPriceMinor;
         dto.EndsAt = listing.EndsAt;
         dto.BidCount = listing.ListBids.Count;
         dto.ListedAt = listing.ListedAt ?? listing.CreatedAt;
@@ -260,7 +267,58 @@ public class MarketplaceService(IDbContextFactory<PhilmartContext> contextFactor
 
     public async Task<List<ClassificationOptionDTO>> GetAreaCountries(CancellationToken cancellationToken = default)
     {
-        return await Options("Sys_ClassificationAreaCountry", null, cancellationToken);
+        using (var context = contextFactory.CreateDbContext())
+        {
+            // ParentID lets the filter show the region > country tree
+            return await context.Database
+                .SqlQuery<ClassificationOptionDTO>($"SELECT ID, Code, Name, SortOrder, ParentID FROM philmart.Sys_ClassificationAreaCountry WHERE Active = 1 ORDER BY SortOrder, Name")
+                .ToListAsync(cancellationToken);
+        }
+    }
+
+    public async Task<List<ClassificationOptionDTO>> GetFormats(CancellationToken cancellationToken = default)
+    {
+        return await Options("Sys_ClassificationFormat", null, cancellationToken);
+    }
+
+    public async Task<List<ClassificationOptionDTO>> GetStampStates(CancellationToken cancellationToken = default)
+    {
+        return await Options("Sys_ClassificationStampState", null, cancellationToken);
+    }
+
+    // shops a buyer can browse, for the Shop filter
+    public async Task<List<ClassificationOptionDTO>> GetShops(CancellationToken cancellationToken = default)
+    {
+        using (var context = contextFactory.CreateDbContext())
+        {
+            return await context.Database
+                .SqlQuery<ClassificationOptionDTO>($@"SELECT ID, Reference AS Code, TradingName AS Name, 0 AS SortOrder, CAST(NULL AS UNIQUEIDENTIFIER) AS ParentID
+                                                     FROM philmart.Shop_Shop WHERE Status = 'active' ORDER BY TradingName")
+                .ToListAsync(cancellationToken);
+        }
+    }
+
+    private static async Task<List<Guid>> AreaAndBelow(PhilmartContext context, Guid areaId, CancellationToken cancellationToken)
+    {
+        // a few hundred rows, cheaper to walk here than a recursive query
+        var all = await context.Database
+            .SqlQuery<AreaRow>($"SELECT ID, ParentID FROM philmart.Sys_ClassificationAreaCountry")
+            .ToListAsync(cancellationToken);
+
+        var found = new List<Guid> { areaId };
+
+        for (int i = 0; i < found.Count; i++)
+        {
+            foreach (var row in all)
+            {
+                if (row.ParentID == found[i] && !found.Contains(row.ID))
+                {
+                    found.Add(row.ID);
+                }
+            }
+        }
+
+        return found;
     }
 
     public async Task<List<ClassificationOptionDTO>> GetTypes(CancellationToken cancellationToken = default)
@@ -285,12 +343,12 @@ public class MarketplaceService(IDbContextFactory<PhilmartContext> contextFactor
         {
             if (typeId == null)
             {
-                string sql = "SELECT ID, Code, Name, SortOrder FROM philmart." + table + " WHERE Active = 1 ORDER BY SortOrder, Name";
+                string sql = "SELECT ID, Code, Name, SortOrder, CAST(NULL AS UNIQUEIDENTIFIER) AS ParentID FROM philmart." + table + " WHERE Active = 1 ORDER BY SortOrder, Name";
 
                 return await context.Database.SqlQueryRaw<ClassificationOptionDTO>(sql).ToListAsync(cancellationToken);
             }
 
-            string filtered = "SELECT ID, Code, Name, SortOrder FROM philmart." + table + " WHERE Active = 1 AND TypeID = {0} ORDER BY SortOrder, Name";
+            string filtered = "SELECT ID, Code, Name, SortOrder, CAST(NULL AS UNIQUEIDENTIFIER) AS ParentID FROM philmart." + table + " WHERE Active = 1 AND TypeID = {0} ORDER BY SortOrder, Name";
 
             return await context.Database.SqlQueryRaw<ClassificationOptionDTO>(filtered, typeId.Value).ToListAsync(cancellationToken);
         }
@@ -380,5 +438,12 @@ public class MarketplaceService(IDbContextFactory<PhilmartContext> contextFactor
         public int ExtensionCount { get; set; }
 
         public DateTimeOffset ServerNow { get; set; }
+    }
+
+    private class AreaRow
+    {
+        public Guid ID { get; set; }
+
+        public Guid? ParentID { get; set; }
     }
 }

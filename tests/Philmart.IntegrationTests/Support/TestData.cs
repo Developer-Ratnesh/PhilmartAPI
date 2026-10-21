@@ -59,6 +59,16 @@ public class TestData(string connectionString)
         return shop;
     }
 
+    public async Task<string> CreatePlatformAdmin()
+    {
+        string email = "platform-" + Unique() + "@test.local";
+
+        await Execute("INSERT INTO philmart.Sys_PlatformUser (Email, FullName, PasswordHash) VALUES (@email, N'Test Platform Admin', @hash);",
+            P("@email", email), P("@hash", PasswordHash));
+
+        return email;
+    }
+
     public async Task<(Guid Id, string Email)> AddShopUser(TestShop shop, params string[] permissions)
     {
         Guid id = Guid.NewGuid();

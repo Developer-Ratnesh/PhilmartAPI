@@ -22,4 +22,10 @@ public interface IMarketplaceService
     Task<List<ClassificationOptionDTO>> GetSubtypes(Guid typeId, CancellationToken cancellationToken = default);
 
     Task<List<ClassificationOptionDTO>> GetThemes(CancellationToken cancellationToken = default);
+
+    Task<List<ClassificationOptionDTO>> GetFormats(CancellationToken cancellationToken = default);
+
+    Task<List<ClassificationOptionDTO>> GetStampStates(CancellationToken cancellationToken = default);
+
+    Task<List<ClassificationOptionDTO>> GetShops(CancellationToken cancellationToken = default);
 }

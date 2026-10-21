@@ -19,9 +19,10 @@ tests.
 | Authoritative close | Built, tested | `AuctionCloser`, `P_List_Auction_Close` |
 | Soft close | Built, tested | `P_List_Bid_Place`, `AuctionTests` |
 | Outage and recovery | Built, tested | sweep on startup and every 5 s |
-| Relevant tests | 54 integration, 24 unit, all passing, plus a 41-check end-to-end run on a freshly built database | `tests/` |
+| Relevant tests | 94 integration, 24 unit, all passing, plus the evidence run in `tools/evidence` (checklist, N01-N30, B01-B14) | `tests/`, `tools/evidence` |
 | Emails actually sent | Built, tested. Every email uses one PHILMART layout with the logo, HTML and plain text | `EmailJob`, `EmailDispatcher`, `EmailLayout`, `EmailDispatchTests`, `EmailLayoutTests` |
-| Staging build | Database ready | `db_acd9e3_philmart` on site4now has 001 to 014 and the demo data. The API and site are deployed by us |
+| Staging build | Deployed | `db_acd9e3_philmart` on site4now (001 to 016 once this release is uploaded), API site4, website site3 and philmart.co.za. `GET /api/version` reports the commit |
+| Schedule A6 technical proof | Built, tested | invoice, Shop-recorded payment, linked reversal: `/workspace/sales`, `InvoiceService`, `InvoiceTests` |
 
 ## Requirements
 
@@ -114,22 +115,44 @@ Every test carries its BR ID as an xUnit trait, so
 | `012_permission_revoke.sql` | DELETE is denied schema-wide and the grants table has no revoked flag, so a permission could never be taken away (D051). | High |
 | `013_unsold_auction_close.sql` | `P_List_Auction_Close` broke `CK_item_ready_since` on every unsold auction, so it never closed and the job retried for ever. | Critical: invalid auction outcome |
 | `014_support_saved_recent.sql` | No tables for the support form (SCR-PUB-015), Saved Items (SCR-PUB-009) or Recently Viewed (SCR-PUB-008). | Medium: three BR-02 screens missing |
+| `015_preferred_delivery_method.sql` | Nothing held the buyer's preferred method from registration step 3, so Buy Now couldn't pre-select it (checklist B.4). Additive. | Medium |
+| `016_revoked_session.sql` | Sign out only forgot the token in the browser; a copy kept working for hours (client review N03). Additive. | Medium (security) |
 
 ## Known issues to declare (Schedule B1)
 
 | # | Severity | Issue |
 |---|---|---|
-| 1 | High | The staging database is ready, the API and site still need deploying to the server. |
-| 2 | Medium | Emails only go out once `Email:Host` and the other SMTP settings are filled in. Until then they wait in `Sys_EmailMessage` and, in development, PINs and links go to the API log. |
+| 1 | Medium | philmart.co.za and staging are the same site and database. Separate them before production. |
+| 2 | Medium | Staging sends mail from info@philmart.co.za, but the domain has no DKIM signing (SPF -all, DMARC p=reject), so mail can land in spam or be refused. Fix in the hosting mail panel / DNS. Locally, with no `Email:Host`, emails wait in `Sys_EmailMessage` and PINs go to the API log. |
 | 3 | Low | The sign-in PIN, Shop user invitation and support copy aren't in the controlled email catalogue, so they're sent straight over SMTP and not stored. That also keeps the sign-in PIN out of the database. |
 | 4 | Medium | All email templates in the seed have no subject or body. The code uses plain fallback wording that follows each rule until the Client supplies it. |
 | 5 | Medium | Legal documents have no published versions in the controlled seed. The demo seed publishes placeholder text, which is what the staging database has now. The real wording has to replace it before production. |
 | 6 | Medium | Admin sign-in has no MFA step yet (`Sys_PlatformUser.MfaSecret` exists). |
-| 7 | Medium | Wrong-PIN counting is in memory, which is correct for one API instance only. |
+| 7 | Low | Wrong-PIN counting and the per-client PIN limit (N01) are in memory, which is correct for one API instance only. |
+| 12 | Medium | The browser keeps the sign-in token in local storage. Sign out now revokes it on the server (016); moving to an httpOnly cookie needs the site and API on one domain. |
 | 8 | Medium | `ItemService.Transition` (BR-10, Milestone 3) has the same ready-to-list problem 013 fixes. Fix lands with BR-10. |
 | 9 | Low | `003_onboarding.sql` defaults `EffectiveFrom` from `SYSUTCDATETIME()` (from Milestone 1). |
 | 10 | Low | The controlled schema spells actor kinds and some audit actions `Buy_Buyer`, `Shop_User`, `Shop_Shop`. The code matches the schema exactly. |
 | 11 | Info | Delivery tariffs are not seeded, so delivery prices are not shown yet. |
+
+## Client review of 21 October 2026
+
+The client added tests N01-N30 and interim findings B01-B14. Every one is
+mapped in `tools/evidence/catalogue.py`, and the tests carry a `Review` trait:
+`dotnet test --filter "Review=N29"`. Changes made in response:
+
+| Item | Change |
+|---|---|
+| B01 | Price sort uses the shown price (current bid for auctions) |
+| B02 | Incomplete alternative address can't be confirmed; postal code required |
+| B03 | Below-minimum bid can't be confirmed on screen |
+| B04 | Bid History stays open across the 10-second refresh |
+| B05, B06 | Purchase-only wording only where something can change; bid wording |
+| B08 | Saved-items counter wording during a search |
+| N01 | Per-client PIN request limit (`Auth:PinRequestsPer10Minutes`, default 30) |
+| N03 | Server-side sign out (`POST /api/auth/logout`, migration 016) |
+| N28 | `GET /api/version` |
+| N29 | Schedule A6 proof: `/workspace/sales`, `/api/shop/sales`, invoices, payments, reversals |
 
 ## Trying it locally
 
@@ -137,6 +160,11 @@ Every test carries its BR ID as an xUnit trait, so
 PHILMART_SQL_DATABASE=PhilmartDev ./database/migrate.sh
 sqlcmd -S localhost -E -C -I -f 65001 -d PhilmartDev -i database/dev/seed_demo.sql
 ```
+
+Testing uses the demo listings up (Buy Now sells them, auctions close).
+`database/dev/staging_topup.sql` adds a fresh batch to both demo Shops, 8 Buy
+Now listings and 6 auctions ending in 3, 7 and 14 days. Run it again whenever
+the marketplace runs low, locally or on staging.
 
 Every demo login uses the password `Philmart-dev-1`:
 

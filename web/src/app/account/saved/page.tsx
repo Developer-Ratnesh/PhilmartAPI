@@ -66,10 +66,28 @@ export default function SavedItemsPage() {
           <button type="submit" className="px-6 py-2.5 text-sm font-bold text-white" style={{ background: "var(--philmart-navy-deep)", borderRadius: 4 }}>
             Search
           </button>
+          {/* B08: with a search on, this counts matches, not everything saved */}
           {data && (
             <span className="ml-auto text-xs" style={{ color: "var(--text-secondary)" }}>
-              {data.totalCount} {data.totalCount === 1 ? "item" : "items"} saved · newest first
+              {applied
+                ? `${data.totalCount} saved ${data.totalCount === 1 ? "item matches" : "items match"} "${applied}"`
+                : `${data.totalCount} ${data.totalCount === 1 ? "item" : "items"} saved`}{" "}
+              · newest first
             </span>
+          )}
+          {applied && (
+            <button
+              type="button"
+              className="text-xs font-semibold hover:underline"
+              style={{ color: "var(--philmart-navy-ink)" }}
+              onClick={() => {
+                setSearch("");
+                setApplied("");
+                setPage(1);
+              }}
+            >
+              Show all saved items
+            </button>
           )}
         </form>
 

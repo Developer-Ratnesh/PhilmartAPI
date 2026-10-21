@@ -25,6 +25,9 @@ public class MarketplaceItemDTO
     // auctions only
     public long? CurrentBidMinor { get; set; }
 
+    // auctions: what the card shows until the first bid
+    public long? StartingPriceMinor { get; set; }
+
     public DateTimeOffset? EndsAt { get; set; }
 
     public int BidCount { get; set; }
@@ -68,6 +71,9 @@ public class ClassificationOptionDTO
     public string Name { get; set; } = string.Empty;
 
     public int SortOrder { get; set; }
+
+    // area / country only: the region it sits under
+    public Guid? ParentID { get; set; }
 }
 
 // Item detail, SCR-PUB-003A (Buy Now) and SCR-PUB-003B (auction)

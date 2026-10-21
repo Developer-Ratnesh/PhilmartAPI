@@ -18,12 +18,13 @@ public static class Money
 
     public static string Display(long cents, string symbol = "R")
     {
-        return symbol + " " + ToMajor(cents).ToString("N0");
+        return symbol + " " + ToMajor(cents).ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public static string DisplayExact(long cents, string symbol = "R")
     {
-        return symbol + " " + ToMajor(cents).ToString("N2");
+        // always "R 1,200.00", whatever culture the server runs under (G.5)
+        return symbol + " " + ToMajor(cents).ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     // Shop commission and PHILMART fees both come through here so the two can

@@ -34,6 +34,10 @@ public class PinChallenges(IDataProtectionProvider provider, IMemoryCache cache)
         };
 
         string challenge = protector.Protect(JsonSerializer.Serialize(payload), Lifetime);
+
+        // checklist L.5: a resend replaces the earlier PIN, it doesn't add a second one
+        cache.Set(LatestKey(purpose, payload.Email), nonce, Lifetime);
+
         return new PinChallenge { Challenge = challenge, Pin = pin };
     }
 
@@ -51,6 +55,12 @@ public class PinChallenges(IDataProtectionProvider provider, IMemoryCache cache)
         }
 
         if (payload == null || payload.Purpose != purpose)
+        {
+            return null;
+        }
+
+        // an older PIN for the same address stops working once a newer one is sent
+        if (cache.TryGetValue(LatestKey(purpose, payload.Email), out string? latest) && latest != payload.Nonce)
         {
             return null;
         }
@@ -105,6 +115,11 @@ public class PinChallenges(IDataProtectionProvider provider, IMemoryCache cache)
     protected virtual string NewPin()
     {
         return RandomNumberGenerator.GetInt32(0, 10000).ToString("D4");
+    }
+
+    private static string LatestKey(string purpose, string email)
+    {
+        return "pin-latest:" + purpose + ":" + email.Trim().ToLowerInvariant();
     }
 
     private static string Hash(string nonce, string pin)

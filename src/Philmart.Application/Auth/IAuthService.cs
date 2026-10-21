@@ -18,5 +18,9 @@ public interface IAuthService
 
     // Run on every request. Permissions come from the database, not the token,
     // so a change or a disable takes effect straight away (D051, BR-08-R05).
-    Task<AccessCheckDTO> CheckAccess(string actorKind, Guid actorId, Guid? shopId, CancellationToken cancellationToken = default);
+    // A signed-out token is refused here too (N03).
+    Task<AccessCheckDTO> CheckAccess(string actorKind, Guid actorId, Guid? shopId, string? tokenId, CancellationToken cancellationToken = default);
+
+    // Sign out: the token stops working on the server, not just in the browser.
+    Task SignOut(string tokenId, DateTimeOffset expiresAt, CancellationToken cancellationToken = default);
 }

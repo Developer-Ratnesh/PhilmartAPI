@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Philmart.Api.Auth;
 using Philmart.Application.Auth;
 using Philmart.Application.Registration;
@@ -15,6 +16,7 @@ public class RegistrationController(IRegistrationService registration, IAuthServ
     // Step 1, "Send verification PIN". Also the resend.
     [HttpPost]
     [AllowAnonymous]
+    [EnableRateLimiting(Program.PinLimit)]
     public Task<PinChallengeDTO> Start(StartRegistrationRequest request, CancellationToken cancellationToken)
     {
         return registration.Start(request, cancellationToken);
