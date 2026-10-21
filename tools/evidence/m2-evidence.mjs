@@ -1540,7 +1540,7 @@ async function workspaceUsers() {
     invited = { email, link: r.body.invitationLink, sent: r.body.emailSent };
     await page.getByRole("button", { name: "Cancel" }).click().catch(() => {});
     // the invitation is sent straight to the mail server (not queued); the API says whether it went
-    if (!r.body.emailSent) blocked("Invitation created and the accept link returned (used in S.6), but no mail server is configured on this environment, so no email was sent.");
+    if (!r.body.emailSent) blocked("Invitation created and the accept link returned (used in S.6), but the email was not sent: no mail server on this environment, or it refused the message (see the API log).");
     return "Invitation email handed to the mail server; accept link returned and used in S.6.";
   });
 
@@ -1833,7 +1833,7 @@ async function emails() {
                         WHERE TemplateCode = '${tpl}' AND ToAddress = ${q(to)} ORDER BY QueuedAt FOR JSON PATH, INCLUDE_NULL_VALUES`, tpl);
       expect(rows.length >= 1, "None queued");
       const sent = rows.filter((r) => r.DeliveryState === "sent").length;
-      if (!sent) blocked(`Queued but not sent here (state ${rows[0].DeliveryState}): no mail server configured on this environment.`);
+      if (!sent) blocked(`Queued but not handed to the mail server here (state ${rows[0].DeliveryState}${rows[0].FailureCode ? ", " + rows[0].FailureCode : ""}): no mail server on this environment, or it refused the message.`);
       return `${rows.length} × ${tpl} to the recipient; ${sent} handed to the mail server.`;
     });
   }
