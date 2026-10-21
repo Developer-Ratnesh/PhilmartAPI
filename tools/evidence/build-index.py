@@ -138,7 +138,7 @@ def main():
     ws.title = "Index"
     cols = ["ID", "Source", "Check", "Requirement (D076 / BRD)", "Milestone", "Expected", "Overall outcome", "Basis"]
     for label, _, _ in runs:
-        cols += [f"{label} result", f"{label} observed", f"{label} evidence"]
+        cols += [f"{label} result", f"{label} observed", f"{label} evidence", f"{label} run / executed at"]
     cols += ["Automated tests", "Automated result", "Overlaps with", "Notes"]
     ws.append(cols)
 
@@ -168,8 +168,11 @@ def main():
             counts.setdefault(source, {}).setdefault(out, 0)
             counts[source][out] += 1
             row = [tid, source, title, req, milestone, expected, out, basis(auto, per_run)]
-            for _, r in per_run:
-                row += [r["status"] if r else "", (r["actual"] if r else ""), "\n".join(r["evidence"]) if r else ""]
+            for (label, r), (_, data, _) in zip(per_run, runs):
+                when = ""
+                if r and r.get("startedAt"):
+                    when = f"run {data.get('runId', '')}, {r['startedAt'].replace('T', ' ')[:19]} UTC"
+                row += [r["status"] if r else "", (r["actual"] if r else ""), "\n".join(r["evidence"]) if r else "", when]
             row += ["\n".join(names), auto_text, overlap, note]
             row = [clean(v) for v in row]
             ws.append(row)
@@ -178,7 +181,7 @@ def main():
     widths = {"ID": 7, "Source": 14, "Check": 34, "Requirement (D076 / BRD)": 24, "Milestone": 12, "Expected": 36, "Overall outcome": 11, "Basis": 30,
               "Automated tests": 46, "Automated result": 20, "Overlaps with": 18, "Notes": 46}
     for i, name in enumerate(cols, start=1):
-        ws.column_dimensions[get_column_letter(i)].width = widths.get(name, 40 if "observed" in name else 34 if "evidence" in name else 10)
+        ws.column_dimensions[get_column_letter(i)].width = widths.get(name, 40 if "observed" in name else 34 if "evidence" in name else 24 if "executed" in name else 10)
         c = ws.cell(row=1, column=i)
         c.font = Font(bold=True, color="FFFFFF")
         c.fill = HEAD
@@ -236,6 +239,7 @@ def main():
         s.append([f"{label} run {data.get('runId', '')} ({data.get('web', '')})",
                   f"{st.count('PASS')} pass, {st.count('FAIL')} fail, {st.count('BLOCKED')} blocked of {len(st)}"])
     s.append([])
+    s.append(["Environment checks: tools/evidence/m2-evidence.mjs (in the repository). Automated tests: dotnet test, results in 02_TEST_OUTPUT (TRX). Every environment file was produced by the run named in its row, against the release and commit above (see 01_RELEASE)."])
     s.append(["Outcome rule: FAIL if anything that ran failed; PASS if the environment run or the mapped automated tests ran and passed; otherwise BLOCKED / NOT RUN with the reason. Nothing that wasn't executed is reported as PASS."])
     s.column_dimensions["A"].width = 60
     for col in "BCDEF":

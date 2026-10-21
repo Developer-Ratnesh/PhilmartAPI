@@ -1858,7 +1858,12 @@ async function emails() {
 
   await check("N24", "Email retry without duplicates", "Failed sends are retried by the same row (Attempts), never re-queued as a second logical email.", async () => {
     const rows = sql(`SELECT TemplateCode, DeliveryState, Attempts, FailureCode FROM philmart.Sys_EmailMessage WHERE Attempts > 1 OR DeliveryState IN ('failed','retrying') ORDER BY QueuedAt DESC OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY FOR JSON PATH, INCLUDE_NULL_VALUES`, "retried emails");
-    const dupes = sql(`SELECT TemplateCode, ToAddress, COUNT(*) AS n FROM philmart.Sys_EmailMessage WHERE TemplateCode IN ('EML-012','EML-020') GROUP BY TemplateCode, ToAddress, BuyerID HAVING COUNT(*) > 1 FOR JSON PATH`, "duplicate logical emails");
+    // a duplicate is a second welcome for one buyer, or more auction-won emails than auctions won
+    const dupes = sql(`SELECT 'EML-020' AS TemplateCode, BuyerID, COUNT(*) AS n FROM philmart.Sys_EmailMessage WHERE TemplateCode = 'EML-020' GROUP BY BuyerID HAVING COUNT(*) > 1
+                       UNION ALL
+                       SELECT 'EML-012', e.BuyerID, e.n FROM (SELECT BuyerID, COUNT(*) AS n FROM philmart.Sys_EmailMessage WHERE TemplateCode = 'EML-012' GROUP BY BuyerID) e
+                       LEFT JOIN (SELECT BuyerID, COUNT(*) AS won FROM philmart.Sale_Transaction WHERE SaleKind = 'auction' GROUP BY BuyerID) w ON w.BuyerID = e.BuyerID
+                       WHERE e.n > ISNULL(w.won, 0) FOR JSON PATH`, "duplicate logical emails");
     expect(dupes.length === 0, "Duplicate welcome/won emails: " + JSON.stringify(dupes));
     return `${rows.length} retried rows on record; no duplicate welcome or auction-won emails. Retry logic: automated test A_failing_address_is_retried_then_given_up_on.`;
   });
@@ -2091,9 +2096,10 @@ async function main() {
 
   await release();
   setupFixtures();
-  await scheduleAuctions();
 
-  const sections = [registration, signIn, marketplace, buyNow, workspaceAuctions, bidding, cancelAndQuiet, technicalProof, workspaceUsers, isolation, admin, emails, security, general];
+  // the test auctions run for a few minutes, so schedule them just before the
+  // auction checks (on a slow site the earlier sections take longer than that)
+  const sections = [registration, signIn, marketplace, buyNow, scheduleAuctions, workspaceAuctions, bidding, cancelAndQuiet, technicalProof, workspaceUsers, isolation, admin, emails, security, general];
   for (const section of sections) {
     try {
       await section();

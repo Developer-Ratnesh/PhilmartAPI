@@ -32,6 +32,7 @@ DEFECTS = [
     ("N28", "Client additional test", "No way to tell which build is deployed", "Low", "Fixed in this release", "GET /api/version; release tag", "The_api_says_which_build_is_running; N28"),
     ("N29", "Client additional test", "Schedule A6 invoice / payment / reversal had no screen or API", "Medium", "Fixed in this release", "InvoiceService, /api/shop/sales..., /workspace/sales", "InvoiceTests; N29 screenshots"),
     ("G.1", "Developer evidence run 21 Oct", "Marketplace scrolled sideways by 27 px on a 375 px phone (pagination row); auction price could wrap between 'R' and the amount", "Low", "Fixed in this release", "Pagination wraps; prices kept on one line", "G.1 screenshots"),
+    ("R.7", "Developer evidence run 21 Oct (live)", "Resuming registration showed an empty step 2 for a second or two before the step reached", "Low", "Fixed in repository (8671681), next upload", "'Loading your registration' until the server answers", "R.7 screenshots (interim and resumed)"),
     ("B.4", "Client checklist 19 Oct", "Preferred method (Collect) not pre-selected", "Medium", "Fixed 19 Oct (migration 015), retested", "Buy_ShippingPreference.IsPreferred", "B.4 screenshots"),
     ("S.5 / E.7", "Client checklist 19 Oct", "Invitation email not received", "Medium", "Code path correct; delivery depends on DKIM (known issue)", "Link also shown on screen", "S.5, S.6"),
     ("S.6 / S.8", "Client checklist 19 Oct", "Limited user had no dashboard / unclear access", "Low", "Fixed 16-19 Oct, retested", "Shop dashboard; 'No access' panel", "S.6, S.8 screenshots"),
@@ -48,6 +49,33 @@ def sha256(path):
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def stamp_screenshots(folder, release, commit, run):
+    from PIL import Image, ImageDraw, ImageFont
+
+    label, path = run
+    results = os.path.join(path, "02_TEST_OUTPUT", "evidence-results.json")
+    meta = json.load(open(results, encoding="utf-8")) if os.path.exists(results) else {}
+    when = {}
+    for r in meta.get("results", []):
+        for e in r.get("evidence", []):
+            when[os.path.basename(e)] = (r["id"], r["startedAt"].replace("T", " ")[:19] + " UTC")
+    try:
+        font = ImageFont.truetype("arial.ttf", 13)
+    except OSError:
+        font = ImageFont.load_default()
+    for name in os.listdir(folder):
+        if not name.endswith(".png"):
+            continue
+        full = os.path.join(folder, name)
+        img = Image.open(full).convert("RGB")
+        tid, at = when.get(name, ("", ""))
+        text = f"PHILMART {release} | commit {commit[:12]} | {label} run {meta.get('runId', '')} | {meta.get('web', '')} | test {tid} | {at}"
+        out = Image.new("RGB", (img.width, img.height + 24), (22, 35, 58))
+        out.paste(img, (0, 0))
+        ImageDraw.Draw(out).text((8, img.height + 5), text, fill=(255, 255, 255), font=font)
+        out.save(full, optimize=True)
 
 
 def copytree(src, dst):
@@ -67,6 +95,8 @@ def main():
     ap.add_argument("--web", required=True)
     ap.add_argument("--api", required=True)
     ap.add_argument("--date", required=True)
+    # raw extra runs kept for the record but not counted in the index: name=dir
+    ap.add_argument("--extra", action="append", default=[])
     a = ap.parse_args()
 
     name = f"PHILMART_M2_Evidence_{a.release}"
@@ -89,6 +119,15 @@ def main():
                 shutil.copy(env, os.path.join(root, "01_RELEASE", f"environment_{label.lower()}.json"))
         else:
             copytree(path, os.path.join(root, "02_TEST_OUTPUT", f"environment-run-{label.lower()}"))
+
+    # Attachment B: screenshots must identify the tested release. A caption
+    # strip under each one says which release, commit, run and test it is.
+    if runs:
+        stamp_screenshots(os.path.join(root, "03_SCREENSHOTS"), a.release, a.commit, runs[0])
+
+    for spec in a.extra:
+        nm, path = spec.split("=", 1)
+        copytree(path, os.path.join(root, "02_TEST_OUTPUT", nm))
 
     trx = [os.path.join(a.trx, x) for x in os.listdir(a.trx) if x.endswith(".trx")]
     for t in trx:

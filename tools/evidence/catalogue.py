@@ -16,7 +16,7 @@ CHECKLIST = [
     ("R.4", "Correct PIN moves to step 2", "Moves to Personal Details", "BR-01-R01", "M2", ["Four_steps_and_the_welcome_email_only_at_the_end"], "", ""),
     ("R.5", "Personal details validation", "Empty/invalid refused with message", "BR-01-R01; D039", "M2", ["Personal_details_with_bad_values_are_refused_with_a_message", "Registration_steps_cannot_be_skipped_through_the_api"], "N05", ""),
     ("R.6", "Address and preferred shipping method; Back keeps data", "Saved; Back returns with data kept", "BR-01-R06; D009, D037", "M2", ["The_preferred_shipping_method_is_saved_and_offered_as_the_default"], "", ""),
-    ("R.7", "Registration resumes at the step reached", "Resumes, not step 1", "BR-01-R01", "M2", [], "", ""),
+    ("R.7", "Registration resumes at the step reached", "Resumes, not step 1", "BR-01-R01", "M2", [], "", "Resumes correctly. Live run: an empty step 2 shows for a second or two while loading; fixed in the repository (8671681) for the next upload."),
     ("R.8", "Cannot finish without legal acceptance", "Finish disabled or error", "BR-01-R04; D076 s4.4", "M2", ["Registration_steps_cannot_be_skipped_through_the_api", "Accepting_an_old_version_is_refused"], "N05", ""),
     ("R.9", "Completes; welcome only now", "Welcome email only after step 4", "BR-01-R03/R04/R05; D036", "M2", ["Four_steps_and_the_welcome_email_only_at_the_end", "Acceptance_is_stored_by_version_and_never_overwritten"], "N04", ""),
     ("R.10", "No second account for the same email", "No second account", "BR-01-R01", "M2", [], "", "Tester note 19 Oct: wanted a message. Since 19 Oct the address gets a 'you already have an account' email."),
