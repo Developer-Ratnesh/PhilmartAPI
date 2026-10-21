@@ -195,7 +195,8 @@ const q = (s) => "N'" + String(s).replace(/'/g, "''") + "'";
 
 async function shot(page, id, name, opts = {}) {
   const file = path.join(dirs.shots, `${id.replace(/\./g, "_")}_${name}.png`);
-  await page.screenshot({ path: file, fullPage: opts.fullPage ?? true });
+  // generous: a busy machine can take a while to settle fonts for a full-page shot
+  await page.screenshot({ path: file, fullPage: opts.fullPage ?? true, timeout: 90000 });
   if (current) current.files.push(path.relative(cfg.out, file).replace(/\\/g, "/"));
   return file;
 }
