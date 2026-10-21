@@ -108,7 +108,7 @@ say "   API up: $(curl -s "http://localhost:$port/api/version")"
 result="$(sql -d "$copy_db" -s '|' -Q "SET NOCOUNT ON; EXEC sp_set_session_context N'philmart.actor_kind', N'system';
 SELECT l.Reference, l.State, CONVERT(VARCHAR(40), l.EndsAt, 127) AS EndsAt, CONVERT(VARCHAR(40), l.ClosedAt, 127) AS ClosedAt, i.State AS ItemState,
        (SELECT COUNT(*) FROM philmart.Sale_Transaction t WHERE t.ListingID = l.ID) AS Sales,
-       (SELECT COUNT(*) FROM philmart.Sys_EmailMessage e JOIN philmart.Sale_Transaction t ON t.BuyerID = e.BuyerID AND t.ListingID = l.ID WHERE e.TemplateCode = 'EML-012') AS WonEmails
+       (SELECT COUNT(*) FROM philmart.Sys_EmailMessage e JOIN philmart.Sale_Transaction t ON t.BuyerID = e.BuyerID AND t.ListingID = l.ID WHERE e.TemplateCode = 'EML-012' AND e.QueuedAt >= t.SoldAt) AS WonEmails
 FROM philmart.List_Listing l JOIN philmart.Item_Item i ON i.ID = l.ItemID WHERE l.ID IN ('$l1','$l2') ORDER BY l.Reference" | tr -d '\r')"
 echo "$result" | tee -a "$log"
 
