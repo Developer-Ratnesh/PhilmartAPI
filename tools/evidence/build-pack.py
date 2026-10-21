@@ -98,6 +98,8 @@ def main():
     ap.add_argument("--date", required=True)
     # raw extra runs kept for the record but not counted in the index: name=dir
     ap.add_argument("--extra", action="append", default=[])
+    # the scripts are in the repository; a client pack doesn't need a copy
+    ap.add_argument("--no-scripts", action="store_true")
     a = ap.parse_args()
 
     name = f"PHILMART_M2_Evidence_{a.release}"
@@ -133,7 +135,8 @@ def main():
     trx = [os.path.join(a.trx, x) for x in os.listdir(a.trx) if x.endswith(".trx")]
     for t in trx:
         shutil.copy(t, os.path.join(root, "02_TEST_OUTPUT", os.path.basename(t)))
-    copytree(os.path.join(HERE), os.path.join(root, "02_TEST_OUTPUT", "scripts"))
+    if not a.no_scripts:
+        copytree(os.path.join(HERE), os.path.join(root, "02_TEST_OUTPUT", "scripts"))
 
     if a.outage and os.path.isdir(a.outage):
         copytree(a.outage, os.path.join(root, "06_AUCTION_AND_RECOVERY", "outage_and_restore"))
@@ -202,7 +205,7 @@ Commit {a.commit}. Generated {a.date}.
 1. Open `00_INDEX.xlsx`. The Summary sheet has the totals. The Index sheet has one row per test: the original checklist (100), N01-N30 and B01-B14. Each row shows its requirement, milestone, outcome and evidence files. The Automated tests sheet lists every automated test, its result, and the IDs it serves.
 2. Files are named by test ID: `03_SCREENSHOTS/B_5_purchase_confirmed.png`, `04_API_AND_DATABASE/M_8_trace.json` (API exchanges and database rows), and so on.
 3. `01_RELEASE` has the release manifest (commit, migrations with SHA-256), the environment the run was made against, and the developer response, which includes the release notes, known issues and declaration.
-4. `02_TEST_OUTPUT` has the machine-readable results (TRX for the automated tests, JSON and JUnit for the environment run) and the scripts that produced them.
+4. `02_TEST_OUTPUT` has the machine-readable results: TRX for the automated tests, JSON and JUnit for the live run. The scripts that produced them are in the repository under `tools/evidence`.
 
 ## Data protection
 
