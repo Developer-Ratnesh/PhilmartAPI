@@ -517,10 +517,9 @@ async function registration() {
     const pin = latestPin(email);
     for (let i = 0; i < 4; i++) await fresh.getByLabel(`PIN digit ${i + 1}`).fill(pin[i]);
     await fresh.getByRole("button", { name: "Verify email and continue" }).click();
-    await settle(fresh);
-    await sleep(1000);
+    // the step comes from the server; on a slow connection that takes a few seconds
+    const onStep4 = await fresh.getByRole("button", { name: "Accept and complete registration" }).waitFor({ timeout: 20000 }).then(() => true, () => false);
     await shot(fresh, "R.7", "resumed");
-    const onStep4 = await fresh.getByRole("button", { name: "Accept and complete registration" }).isVisible().catch(() => false);
     await closePage(fresh);
     expect(onStep4, "Did not resume at step 4");
     return "A new browser verifying the same email resumed at Review and Accept.";

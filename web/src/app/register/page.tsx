@@ -32,14 +32,18 @@ export default function RegisterPage() {
         if (s.completed) setDone(true);
         setServerStep(s.step);
       })
-      .catch(() => {});
+      // can't tell where they got to: fall back to step 2, as before
+      .catch(() => !cancelled && setServerStep(2));
 
     return () => {
       cancelled = true;
     };
   }, [signedInBuyer]);
 
-  const step = !signedInBuyer ? 1 : (viewStep ?? serverStep ?? 2);
+  // until the server says which step they reached, show neither a step nor
+  // an empty form (it read like "start again" on a slow connection, R.7)
+  const loading = !!signedInBuyer && !done && viewStep == null && serverStep == null;
+  const step = !signedInBuyer ? 1 : (viewStep ?? serverStep ?? 0);
 
   function advance(next: number) {
     setServerStep((s) => Math.max(s ?? 1, next));
@@ -55,7 +59,7 @@ export default function RegisterPage() {
           Create Buyer Account
         </h1>
         <p className="mb-6 text-sm" style={{ color: "var(--text-secondary)" }}>
-          Buyer Registration — Step {done ? 4 : step} of 4 · {STEPS[(done ? 4 : step) - 1]}
+          {loading ? "Buyer Registration" : `Buyer Registration — Step ${done ? 4 : step} of 4 · ${STEPS[(done ? 4 : step) - 1]}`}
         </p>
 
         <ol className="mb-6 grid grid-cols-4 gap-2" aria-label="Registration steps">
@@ -76,7 +80,11 @@ export default function RegisterPage() {
           })}
         </ol>
 
-        {done ? (
+        {loading ? (
+          <Panel>
+            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Loading your registration…</p>
+          </Panel>
+        ) : done ? (
           <Panel>
             <h2 className="mb-2 font-display text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
               You&apos;re registered
@@ -99,7 +107,7 @@ export default function RegisterPage() {
         )}
       </main>
 
-      <PublicFooter screenId={SCREENS[(done ? 4 : step) - 1]} />
+      <PublicFooter screenId={SCREENS[Math.max(1, done ? 4 : step) - 1]} />
     </div>
   );
 }
