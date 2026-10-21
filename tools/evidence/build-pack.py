@@ -103,6 +103,8 @@ def main():
     cmd = [sys.executable, "-I", os.path.join(HERE, "build-index.py"), "--out", index, "--release", f"Release {a.release}, commit {a.commit}", "--trx", *trx]
     for label, path in runs:
         cmd += ["--run", f"{label}={os.path.join(path, '02_TEST_OUTPUT', 'evidence-results.json')}"]
+    if a.outage:
+        cmd += ["--outage-log", os.path.join(a.outage, "O1_N23_N30_outage_and_restore.log")]
     subprocess.run(cmd, check=True)
     facts = os.path.splitext(index)[0] + ".facts.json"
     shutil.move(facts, os.path.join(a.out, f"{name}.facts.json"))

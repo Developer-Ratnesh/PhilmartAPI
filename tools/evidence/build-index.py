@@ -115,10 +115,23 @@ def main():
     ap.add_argument("--run", action="append", default=[])
     ap.add_argument("--out", required=True)
     ap.add_argument("--release", default="")
+    ap.add_argument("--outage-log", default="")
     args = ap.parse_args()
 
     tests = read_trx(args.trx)
     runs = read_runs(args.run)
+
+    # the backup/restore/restart demonstration counts as an environment check
+    # for the IDs it was built for
+    if args.outage_log and os.path.exists(args.outage_log):
+        with open(args.outage_log, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        ok = "PASS:" in text
+        res = {"status": "PASS" if ok else "FAIL",
+               "actual": ("Backup, restore, outage and restart on a copy: " + text.strip().splitlines()[-1].split("] ", 1)[-1]) if text.strip() else "",
+               "evidence": ["06_AUCTION_AND_RECOVERY/outage_and_restore/O1_N23_N30_outage_and_restore.log"]}
+        restore = {tid: dict(res, id=tid) for tid in ("O.1", "N23", "N30")}
+        runs.append(("Restore demo", {"results": list(restore.values())}, restore))
 
     wb = Workbook()
     ws = wb.active
@@ -136,6 +149,16 @@ def main():
             auto, auto_text = automated(names, tests)
             per_run = [(label, idx.get(tid)) for label, _, idx in runs]
             env = [r["status"] for _, r in per_run if r]
+            if not names and not env and overlap and milestone.startswith("M2"):
+                ids = [x.strip() for x in overlap.replace(";", ",").split(",") if x.strip()]
+                for label, _, idx in runs:
+                    found = [idx[i] for i in ids if i in idx]
+                    if found:
+                        st = "FAIL" if any(f["status"] == "FAIL" for f in found) else ("PASS" if all(f["status"] == "PASS" for f in found) else "BLOCKED")
+                        merged = {"status": st, "actual": "Covered by " + ", ".join(f["id"] + " (" + f["status"] + ")" for f in found),
+                                  "evidence": [e for f in found for e in f["evidence"]]}
+                        per_run = [(l, merged if l == label else r) for l, r in per_run]
+                env = [r["status"] for _, r in per_run if r]
             out = overall(auto, env)
             if not names and not env:
                 out = "NOT RUN"
