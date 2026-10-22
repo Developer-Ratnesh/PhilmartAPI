@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { PublicHeader, PublicFooter } from "@/components/layout/PublicHeader";
 import { ItemCard, ItemRow } from "@/components/marketplace/ItemCard";
+import { Pagination } from "@/components/marketplace/Pagination";
 import {
   api,
   type ClassificationOption,
@@ -28,6 +29,23 @@ const FILTER_KEYS = [
   "sort",
 ] as const;
 
+// V41-MKT-04: page, page size and view live in the url too, so Back from an
+// item or a storefront returns to the same page, view and filters
+function stateToSearch(filter: MarketplaceQuery, view: ViewMode): string {
+  const out = new URLSearchParams();
+  for (const key of FILTER_KEYS) {
+    const value = filter[key];
+    if (value) out.set(key, value);
+  }
+  if (filter.page && filter.page > 1) out.set("page", String(filter.page));
+  if (filter.pageSize && filter.pageSize !== 10) out.set("pageSize", String(filter.pageSize));
+  if (view !== "grid") out.set("view", view);
+  return out.toString();
+}
+
+// what this page last wrote to the url itself, so writing it doesn't remount the page
+let selfWritten: string | null = null;
+
 // links like /marketplace?sellingMethod=auction&sort=ending start pre-filtered.
 // useSearchParams needs a Suspense boundary or the static build bails out
 export default function MarketplacePage() {
@@ -45,14 +63,24 @@ function MarketplaceFromUrl() {
     const value = params.get(key);
     if (value) initial[key] = value;
   }
+  const page = Number(params.get("page"));
+  if (Number.isInteger(page) && page > 1) initial.page = page;
+  const pageSize = Number(params.get("pageSize"));
+  if (Number.isInteger(pageSize) && pageSize > 0 && pageSize <= 100) initial.pageSize = pageSize;
+  const initialView: ViewMode = params.get("view") === "list" ? "list" : "grid";
 
-  // remount when the url changes, e.g. clicking Auctions in the header while already here
-  return <Marketplace key={params.toString()} initial={initial} />;
+  // remount when the url changes from outside, e.g. clicking Auctions in the
+  // header while already here, but not when this page wrote it
+  const [key, setKey] = useState(params.toString());
+  const current = params.toString();
+  if (current !== key && current !== selfWritten) setKey(current);
+
+  return <Marketplace key={key} initial={initial} initialView={initialView} />;
 }
 
 // the view toggle only changes how we render data.items, never the request
-function Marketplace({ initial }: { initial: MarketplaceQuery }) {
-  const [view, setView] = useState<ViewMode>("grid");
+function Marketplace({ initial, initialView }: { initial: MarketplaceQuery; initialView: ViewMode }) {
+  const [view, setView] = useState<ViewMode>(initialView);
   const [filter, setFilter] = useState<MarketplaceQuery>(initial);
   const [searchText, setSearchText] = useState(initial.query ?? "");
   const [data, setData] = useState<PagedResult<MarketplaceItem> | null>(null);
@@ -89,6 +117,13 @@ function Marketplace({ initial }: { initial: MarketplaceQuery }) {
       cancelled = true;
     };
   }, [filter, attempt]);
+
+  useEffect(() => {
+    const search = stateToSearch(filter, view);
+    if (search === window.location.search.replace(/^\?/, "")) return;
+    selfWritten = search;
+    window.history.replaceState(window.history.state, "", search ? `?${search}` : window.location.pathname);
+  }, [filter, view]);
 
   const update = (patch: Partial<MarketplaceQuery>) => {
     setLoading(true);
@@ -426,53 +461,5 @@ function SkeletonGrid() {
         />
       ))}
     </div>
-  );
-}
-
-function Pagination({
-  page,
-  totalPages,
-  onPage,
-}: {
-  page: number;
-  totalPages: number;
-  onPage: (page: number) => void;
-}) {
-  const window = 5;
-  const start = Math.max(1, Math.min(page - 2, totalPages - window + 1));
-  const pages = Array.from({ length: Math.min(window, totalPages) }, (_, i) => start + i);
-
-  const button = (label: string, target: number, disabled = false, active = false) => (
-    <button
-      key={`${label}-${target}`}
-      type="button"
-      disabled={disabled}
-      onClick={() => onPage(target)}
-      className="min-w-9 px-3 py-1.5 text-sm font-medium disabled:opacity-40"
-      style={{
-        background: active ? "var(--philmart-navy)" : "var(--surface-card)",
-        color: active ? "var(--text-inverse)" : "var(--text-secondary)",
-        border: "1px solid var(--border-default)",
-        borderRadius: 4,
-      }}
-    >
-      {label}
-    </button>
-  );
-
-  return (
-    <nav className="mt-8 flex flex-wrap justify-center gap-1" aria-label="Pagination">
-      {button("«", 1, page === 1)}
-      {button("‹", page - 1, page === 1)}
-      {pages.map((p) => button(String(p), p, false, p === page))}
-      {totalPages > start + window - 1 && (
-        <span className="px-2 py-1.5 text-sm" style={{ color: "var(--text-muted)" }}>
-          …
-        </span>
-      )}
-      {totalPages > start + window - 1 && button(String(totalPages), totalPages)}
-      {button("›", page + 1, page === totalPages)}
-      {button("»", totalPages, page === totalPages)}
-    </nav>
   );
 }

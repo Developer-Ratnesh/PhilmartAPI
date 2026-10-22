@@ -159,7 +159,7 @@ public class ClientReviewTests(DatabaseFixture db)
 
         // straight to the address step, then straight to accepting, without step 2
         var address = await client.PutAsJsonAsync("/api/register/address",
-            new { addressLine1 = "1 Skip Road", city = "Durban", postalCode = "4001", countryCode = "ZA", shippingPreferences = Array.Empty<object>(), outbidAlerts = true });
+            new { addressLine1 = "1 Skip Road", city = "Durban", province = "KwaZulu-Natal", postalCode = "4001", countryCode = "ZA", shippingPreferences = Array.Empty<object>(), outbidAlerts = true });
         Assert.Equal(HttpStatusCode.UnprocessableEntity, address.StatusCode);
 
         var docs = await client.GetFromJsonAsync<JsonElement>("/api/register/legal");
@@ -280,6 +280,7 @@ public class ClientReviewTests(DatabaseFixture db)
     [Fact]
     [Trait("Review", "N16")]
     [Trait("BR", "BR-08-R08")]
+    [Trait("Query", "V31-LST-09")]
     public async Task Another_shops_sales_invoices_and_payments_are_out_of_reach()
     {
         var shop = await db.Data.CreateShop();

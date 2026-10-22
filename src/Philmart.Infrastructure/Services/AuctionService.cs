@@ -3,6 +3,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Philmart.Application.Auctions;
+using Philmart.Application.Common;
 using Philmart.Domain.Abstractions;
 using Philmart.Domain.Constants;
 using Philmart.Domain.Exceptions;
@@ -28,6 +29,170 @@ public class AuctionService(IDbContextFactory<PhilmartContext> contextFactory, I
                                              WHERE l.ShopID = {shopId} AND l.ListingType = 'auction'
                                              ORDER BY CASE WHEN l.State IN ('live', 'scheduled') THEN 0 ELSE 1 END, l.EndsAt DESC")
                 .ToListAsync(cancellationToken);
+        }
+    }
+
+    public async Task<AuctionManagementDTO> Get(Guid listingId, CancellationToken cancellationToken = default)
+    {
+        Guid shopId = RequireShop();
+        AuctionManagementDTO dto;
+
+        // ownership first, under the Shop's own session: RLS and the ShopID both
+        // have to agree, otherwise it's not found, the same as an unknown ID
+        using (var context = contextFactory.CreateDbContext())
+        {
+            var row = await context.Database
+                .SqlQuery<ManagementRow>($@"SELECT l.ID AS ListingID, l.ItemID, l.Reference, i.Reference AS ItemReference, i.Title, i.State AS ItemState,
+                                                   s.FullName AS SellerName, l.State, l.StartingPriceMinor, l.ReservePriceMinor, l.BidIncrementMinor,
+                                                   l.StartsAt, l.EndsAt, l.ExtensionCount, l.SoldPriceMinor, l.CancellationReason, l.ClosedAt,
+                                                   philmart.ServerNow() AS ServerNow
+                                            FROM philmart.List_Listing l
+                                            JOIN philmart.Item_Item i ON i.ID = l.ItemID
+                                            LEFT JOIN philmart.Sell_Seller s ON s.ID = i.SellerID
+                                            WHERE l.ID = {listingId} AND l.ShopID = {shopId} AND l.ListingType = 'auction'")
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (row == null)
+            {
+                throw new NotFoundException("Auction", listingId);
+            }
+
+            dto = new AuctionManagementDTO
+            {
+                ListingID = row.ListingID,
+                ItemID = row.ItemID,
+                Reference = row.Reference,
+                ItemReference = row.ItemReference,
+                Title = row.Title,
+                ItemState = row.ItemState,
+                SellerName = row.SellerName,
+                State = row.State,
+                StartingPriceMinor = row.StartingPriceMinor,
+                ReservePriceMinor = row.ReservePriceMinor,
+                BidIncrementMinor = row.BidIncrementMinor,
+                StartsAt = row.StartsAt,
+                EndsAt = row.EndsAt,
+                ExtensionCount = row.ExtensionCount,
+                SoldPriceMinor = row.SoldPriceMinor,
+                CancellationReason = row.CancellationReason,
+                ClosedAt = row.ClosedAt,
+                ServerNow = row.ServerNow,
+            };
+        }
+
+        // The listing is this Shop's, so its whole trail can be read. The unsold
+        // close is audited by the system without a ShopID, so read as system,
+        // and only for this one listing.
+        using (var context = contextFactory.CreateDbContext())
+        {
+            await context.UseSystemSession(null, cancellationToken);
+
+            var bids = await context.Database
+                .SqlQuery<BidRow>($@"SELECT BuyerID, AmountMinor, PlacedAt, SequenceNo, IsWinning, TriggeredExtension
+                                     FROM philmart.List_Bid WHERE ListingID = {listingId} ORDER BY SequenceNo")
+                .ToListAsync(cancellationToken);
+
+            var audit = await context.Database
+                .SqlQuery<AuditRow>($@"SELECT ID, OccurredAt, Action, Reason, AfterValue FROM philmart.Sys_AuditEvent
+                                       WHERE EntityTable = 'List_Listing' AND EntityID = {listingId.ToString()}
+                                       ORDER BY ID")
+                .ToListAsync(cancellationToken);
+
+            // bidders numbered by first bid, the same number on every row
+            var bidderNumbers = new Dictionary<Guid, int>();
+            foreach (var b in bids)
+            {
+                if (!bidderNumbers.ContainsKey(b.BuyerID))
+                {
+                    bidderNumbers[b.BuyerID] = bidderNumbers.Count + 1;
+                }
+            }
+
+            var ranked = bids.OrderByDescending(x => x.AmountMinor).ThenBy(x => x.SequenceNo).ToList();
+            foreach (var b in ranked)
+            {
+                dto.Bids.Add(new AuctionBidDTO
+                {
+                    SequenceNo = b.SequenceNo,
+                    Rank = dto.Bids.Count + 1,
+                    Bidder = "Bidder " + bidderNumbers[b.BuyerID],
+                    AmountMinor = b.AmountMinor,
+                    PlacedAt = b.PlacedAt,
+                    Leading = dto.Bids.Count == 0 && dto.State != PhilmartConstants.ListingState.Cancelled,
+                    Winning = b.IsWinning,
+                    ExtendedClose = b.TriggeredExtension,
+                });
+            }
+
+            dto.BidCount = bids.Count;
+            dto.CurrentBidMinor = ranked.Count == 0 ? null : ranked[0].AmountMinor;
+
+            var activity = new List<(DateTimeOffset At, long Order, AuctionActivityDTO Entry)>();
+
+            foreach (var a in audit)
+            {
+                activity.Add((a.OccurredAt, a.ID, new AuctionActivityDTO
+                {
+                    At = a.OccurredAt,
+                    Action = a.Action,
+                    Description = Describe(a, dto),
+                    Reason = a.Reason,
+                }));
+            }
+
+            // going live is the sweep's state change, it has no audit row of its own
+            bool opened = dto.State != PhilmartConstants.ListingState.Scheduled && dto.StartsAt <= dto.ServerNow
+                          && (dto.ClosedAt == null || dto.ClosedAt > dto.StartsAt);
+            if (opened)
+            {
+                activity.Add((dto.StartsAt, 0, new AuctionActivityDTO
+                {
+                    At = dto.StartsAt,
+                    Action = "auction.live",
+                    Description = "Auction opened for bidding",
+                }));
+            }
+
+            foreach (var b in bids)
+            {
+                activity.Add((b.PlacedAt, 0, new AuctionActivityDTO
+                {
+                    At = b.PlacedAt,
+                    Action = "bid.placed",
+                    Description = "Bid " + b.SequenceNo + ": " + Money.DisplayExact(b.AmountMinor) + " by Bidder " + bidderNumbers[b.BuyerID]
+                                  + (b.TriggeredExtension ? ", extended the close" : ""),
+                }));
+            }
+
+            dto.Activity = activity.OrderBy(x => x.At).ThenBy(x => x.Order).Select(x => x.Entry).ToList();
+        }
+
+        return dto;
+    }
+
+    private static string Describe(AuditRow a, AuctionManagementDTO dto)
+    {
+        switch (a.Action)
+        {
+            case "auction.created":
+                return "Auction scheduled";
+
+            case "auction.cancelled":
+                return "Cancelled. It had no bids, so the item went back to Ready to List.";
+
+            case PhilmartConstants.AuditAction.AuctionCancelledWithBids:
+                return "Cancelled as an exception. Every bid is kept on record and the bidders were told.";
+
+            case "auction.closed":
+                if (a.AfterValue != null && a.AfterValue.Contains("\"sold\"", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "Closed: sold for " + Money.DisplayExact(dto.SoldPriceMinor ?? 0) + " to the highest bidder";
+                }
+
+                return "Closed: unsold, the item went back to Ready to List";
+
+            default:
+                return a.Action;
         }
     }
 
@@ -184,6 +349,20 @@ public class AuctionService(IDbContextFactory<PhilmartContext> contextFactory, I
 
                 bool hasBids = bidders.Count > 0;
 
+                // the listing row is locked, and P_List_Bid_Place takes the same
+                // lock, so no bid can land between this count and the update
+                if (request.ExpectedBidCount != null)
+                {
+                    int bidCount = await context.Database
+                        .SqlQuery<int>($"SELECT COUNT(*) AS Value FROM philmart.List_Bid WHERE ListingID = {listingId}")
+                        .FirstAsync(cancellationToken);
+
+                    if (bidCount != request.ExpectedBidCount)
+                    {
+                        throw new ConflictException("Bids on this auction have changed since you opened it. Nothing was cancelled. Check the auction again before deciding.");
+                    }
+                }
+
                 // D016: with bids it's the exceptional route, admin-only permission
                 if (hasBids && !tenant.Has(PhilmartConstants.Permission.AuctionCancelWithBids))
                 {
@@ -273,6 +452,73 @@ public class AuctionService(IDbContextFactory<PhilmartContext> contextFactory, I
         public Guid BuyerID { get; set; }
 
         public string Email { get; set; } = null!;
+    }
+
+    private class ManagementRow
+    {
+        public Guid ListingID { get; set; }
+
+        public Guid ItemID { get; set; }
+
+        public string Reference { get; set; } = null!;
+
+        public string ItemReference { get; set; } = null!;
+
+        public string Title { get; set; } = null!;
+
+        public string ItemState { get; set; } = null!;
+
+        public string? SellerName { get; set; }
+
+        public string State { get; set; } = null!;
+
+        public long StartingPriceMinor { get; set; }
+
+        public long? ReservePriceMinor { get; set; }
+
+        public long BidIncrementMinor { get; set; }
+
+        public DateTimeOffset StartsAt { get; set; }
+
+        public DateTimeOffset EndsAt { get; set; }
+
+        public int ExtensionCount { get; set; }
+
+        public long? SoldPriceMinor { get; set; }
+
+        public string? CancellationReason { get; set; }
+
+        public DateTimeOffset? ClosedAt { get; set; }
+
+        public DateTimeOffset ServerNow { get; set; }
+    }
+
+    private class BidRow
+    {
+        public Guid BuyerID { get; set; }
+
+        public long AmountMinor { get; set; }
+
+        public DateTimeOffset PlacedAt { get; set; }
+
+        public long SequenceNo { get; set; }
+
+        public bool IsWinning { get; set; }
+
+        public bool TriggeredExtension { get; set; }
+    }
+
+    private class AuditRow
+    {
+        public long ID { get; set; }
+
+        public DateTimeOffset OccurredAt { get; set; }
+
+        public string Action { get; set; } = null!;
+
+        public string? Reason { get; set; }
+
+        public string? AfterValue { get; set; }
     }
 }
 

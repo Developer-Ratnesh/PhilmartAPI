@@ -1,4 +1,5 @@
 using System.Data;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -37,6 +38,22 @@ public class RegistrationService(
             throw new BusinessRuleViolationException("Too many PINs have been asked for. Please wait an hour and try again.");
         }
 
+        // V38-REG-06: two Create Account requests for the same new email at once
+        // both see no row and both insert. UQ_buyer_email lets one through; the
+        // other starts again and picks up that registration instead of failing.
+        try
+        {
+            return await StartOnce(email, cancellationToken);
+        }
+        catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
+        {
+            logger.LogInformation("Registration for {Email} was started twice at once; resuming the one that got in", email);
+            return await StartOnce(email, cancellationToken);
+        }
+    }
+
+    private async Task<PinChallengeDTO> StartOnce(string email, CancellationToken cancellationToken)
+    {
         bool alreadyRegistered = false;
 
         using (var context = contextFactory.CreateDbContext())
@@ -269,10 +286,7 @@ public class RegistrationService(
     {
         Guid buyerId = RequireBuyer();
 
-        if (string.IsNullOrWhiteSpace(request.AddressLine1) || string.IsNullOrWhiteSpace(request.City))
-        {
-            throw new BusinessRuleViolationException("Enter your street address and city.");
-        }
+        PhysicalAddress.Check(request);
 
         using (var context = contextFactory.CreateDbContext())
         {
@@ -423,6 +437,25 @@ public class RegistrationService(
             await context.InTransaction(IsolationLevel.ReadCommitted, async () =>
             {
                 await context.Database.OpenConnectionAsync(cancellationToken);
+
+                // V38-REG-06: Create Account sent twice, or retried while the first
+                // is still running. The buyer row lock queues the second one behind
+                // the first, and then it finds everything already accepted.
+                var completedAt = await context.Database
+                    .SqlQuery<DateTimeOffset?>($"SELECT RegistrationCompletedAt AS Value FROM philmart.Buy_Buyer WITH (UPDLOCK, HOLDLOCK) WHERE ID = {buyerId}")
+                    .FirstAsync(cancellationToken);
+                renewal = completedAt != null;
+
+                var accepted = await context.Database
+                    .SqlQuery<Guid>($"SELECT VersionID AS Value FROM philmart.Sys_LegalAcceptance WHERE BuyerID = {buyerId}")
+                    .ToListAsync(cancellationToken);
+
+                // a repeat of what's already on record adds nothing. A renewal still
+                // records the full set the buyer was shown, as before.
+                if (current.All(x => accepted.Contains(x.VersionID)))
+                {
+                    return true;
+                }
 
                 // BR-01-R05: always new rows, the database won't let an old acceptance change
                 foreach (var doc in current)

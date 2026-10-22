@@ -36,6 +36,7 @@ public class ShopIsolationTests(DatabaseFixture db)
     [Fact]
     [Trait("BR", "BR-08-R06")]
     [Trait("BR", "BR-08-R08")]
+    [Trait("Query", "V24-AUC-08")]
     public async Task Another_shops_auctions_cant_be_seen_or_cancelled()
     {
         var a = await db.Data.CreateShop();
@@ -56,6 +57,84 @@ public class ShopIsolationTests(DatabaseFixture db)
         var create = await client.PostAsJsonAsync("/api/shop/auctions",
             new { itemID = itemA, startingPriceMinor = 1000, bidIncrementMinor = 100, startsAt = DateTimeOffset.UtcNow.AddHours(1), endsAt = DateTimeOffset.UtcNow.AddDays(1) });
         Assert.Equal(HttpStatusCode.NotFound, create.StatusCode);
+    }
+
+    // V49-AUC-09: SCR-SHP-006.1 Auction Management, read and write, across Shops
+    [Fact]
+    [Trait("BR", "BR-08-R08")]
+    [Trait("Query", "V49-AUC-09")]
+    public async Task Another_shops_auction_management_cant_be_read_or_changed()
+    {
+        var a = await db.Data.CreateShop();
+        var b = await db.Data.CreateShop();
+        Guid auctionA = await db.Data.CreateAuction(a, DateTimeOffset.UtcNow.AddDays(1));
+        var asA = db.Api.As(await db.Api.SignIn(a.AdminEmail, TestData.Password, "shop"));
+        var asB = db.Api.As(await db.Api.SignIn(b.AdminEmail, TestData.Password, "shop"));
+
+        // the owner can open it
+        Assert.Equal(HttpStatusCode.OK, (await asA.GetAsync("/api/shop/auctions/" + auctionA)).StatusCode);
+
+        // Shop B gets the same not-found as for an ID that doesn't exist, and nothing of A's
+        var read = await asB.GetAsync("/api/shop/auctions/" + auctionA);
+        var unknown = await asB.GetAsync("/api/shop/auctions/" + Guid.NewGuid());
+        Assert.Equal(HttpStatusCode.NotFound, read.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        string body = await read.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("Test item", body);
+        Assert.DoesNotContain("currentBid", body, StringComparison.OrdinalIgnoreCase);
+
+        // a header or query naming Shop A changes nothing
+        var bent = new HttpRequestMessage(HttpMethod.Get, "/api/shop/auctions/" + auctionA + "?shopId=" + a.ID);
+        bent.Headers.Add("X-Shop-Id", a.ID.ToString());
+        Assert.Equal(HttpStatusCode.NotFound, (await asB.SendAsync(bent)).StatusCode);
+
+        // writes: cancel, both routes
+        Assert.Equal(HttpStatusCode.NotFound, (await asB.PostAsJsonAsync("/api/shop/auctions/" + auctionA + "/cancel", new { reason = "x", expectedBidCount = 0 })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await asB.PostAsJsonAsync("/api/shop/auctions/" + auctionA + "/cancel", new { reason = "x", itemMissingOrDamaged = true })).StatusCode);
+        Assert.Equal("live", await db.Data.Scalar<string>("SELECT State FROM philmart.List_Listing WHERE ID = @l", TestData.P("@l", auctionA)));
+
+        // a Shop user without auction.manage can't open their own Shop's auction either
+        var staff = await db.Data.AddShopUser(a, "item.view");
+        var asStaff = db.Api.As(await db.Api.SignIn(staff.Email, TestData.Password, "shop"));
+        Assert.Equal(HttpStatusCode.Forbidden, (await asStaff.GetAsync("/api/shop/auctions/" + auctionA)).StatusCode);
+
+        // nor can a Buyer
+        var buyer = await db.Data.CreateBuyer();
+        var asBuyer = db.Api.As(await db.Api.SignIn(buyer.Email, TestData.Password, "buyer"));
+        Assert.NotEqual(HttpStatusCode.OK, (await asBuyer.GetAsync("/api/shop/auctions/" + auctionA)).StatusCode);
+    }
+
+    // V24-AUC-08: the exceptional with-bids cancellation, by a Shop B
+    // administrator who holds auction.cancel_with_bids in their own Shop
+    [Fact]
+    [Trait("BR", "BR-08-R08")]
+    [Trait("Decision", "D016")]
+    [Trait("Query", "V24-AUC-08")]
+    public async Task Another_shops_auction_with_bids_cant_be_cancelled_as_an_exception()
+    {
+        var a = await db.Data.CreateShop();
+        var b = await db.Data.CreateShop();
+        Guid auctionA = await db.Data.CreateAuction(a, DateTimeOffset.UtcNow.AddDays(1));
+        var buyer = await db.Data.CreateBuyer();
+        string buyerToken = await db.Api.SignIn(buyer.Email, TestData.Password, "buyer");
+        var detail = await db.Api.CreateClient().GetFromJsonAsync<JsonElement>("/api/marketplace/listings/" + auctionA);
+        var bid = await db.Api.As(buyerToken).PostAsJsonAsync("/api/listings/" + auctionA + "/bids",
+            new { commitmentVersionID = detail.GetProperty("commitment").GetProperty("versionID").GetGuid(), amountMinor = 10000, idempotencyKey = "iso-" + auctionA });
+        Assert.Equal(HttpStatusCode.OK, bid.StatusCode);
+
+        var client = db.Api.As(await db.Api.SignIn(b.AdminEmail, TestData.Password, "shop"));
+        var cancel = await client.PostAsJsonAsync("/api/shop/auctions/" + auctionA + "/cancel",
+            new { reason = "not mine", itemMissingOrDamaged = true, expectedBidCount = 1 });
+
+        Assert.Equal(HttpStatusCode.NotFound, cancel.StatusCode);
+        string body = await cancel.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("bid", body, StringComparison.OrdinalIgnoreCase);
+
+        Assert.Equal("live", await db.Data.Scalar<string>("SELECT State FROM philmart.List_Listing WHERE ID = @l", TestData.P("@l", auctionA)));
+        Assert.Equal("listed", await db.Data.Scalar<string>(
+            "SELECT i.State FROM philmart.Item_Item i JOIN philmart.List_Listing l ON l.ItemID = i.ID WHERE l.ID = @l", TestData.P("@l", auctionA)));
+        Assert.Equal(0, await db.Data.Scalar<int>("SELECT COUNT(*) FROM philmart.Sys_AuditEvent WHERE EntityID = @l AND Action LIKE 'auction.cancel%'", TestData.P("@l", auctionA.ToString())));
+        Assert.Equal(0, await db.Data.Scalar<int>("SELECT COUNT(*) FROM philmart.Sys_EmailMessage WHERE BuyerID = @b AND TemplateCode = 'EML-015'", TestData.P("@b", buyer.Id)));
     }
 
     [Fact]

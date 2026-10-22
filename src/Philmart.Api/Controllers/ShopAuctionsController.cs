@@ -20,6 +20,14 @@ public class ShopAuctionsController(IAuctionService auctions) : ControllerBase
         return auctions.List(cancellationToken);
     }
 
+    // SCR-SHP-006.1 Auction Management
+    [HttpGet("{listingId:guid}")]
+    [RequiresPermission(PhilmartConstants.Permission.AuctionManage)]
+    public Task<AuctionManagementDTO> Get(Guid listingId, CancellationToken cancellationToken)
+    {
+        return auctions.Get(listingId, cancellationToken);
+    }
+
     [HttpGet("ready-items")]
     [RequiresPermission(PhilmartConstants.Permission.AuctionManage)]
     public Task<List<ReadyItemDTO>> ReadyItems(CancellationToken cancellationToken)

@@ -257,6 +257,249 @@ public class AuctionTests(DatabaseFixture db) : IAsyncLifetime
             "SELECT i.State FROM philmart.Item_Item i JOIN philmart.List_Listing l ON l.ItemID = i.ID WHERE l.ID = @l", TestData.P("@l", auction)));
     }
 
+    // V24-AUC-02: the Shop opens the zero-bid confirmation, a Buyer bids, then
+    // the Shop confirms. The administrator holds cancel_with_bids, so without
+    // the check this would silently become the exceptional route.
+    [Fact]
+    [Trait("BR", "BR-13-R07")]
+    [Trait("Decision", "D016")]
+    [Trait("Query", "V24-AUC-02")]
+    public async Task A_cancellation_confirmed_before_a_bid_arrived_is_refused()
+    {
+        var shop = await db.Data.CreateShop();
+        Guid auction = await db.Data.CreateAuction(shop, start.AddDays(1));
+        string adminToken = await db.Api.SignIn(shop.AdminEmail, TestData.Password, "shop");
+        var admin = db.Api.As(adminToken);
+
+        var seen = await admin.GetFromJsonAsync<JsonElement>("/api/shop/auctions");
+        int seenBids = seen.EnumerateArray().Single(x => x.GetProperty("listingID").GetGuid() == auction).GetProperty("bidCount").GetInt32();
+        Assert.Equal(0, seenBids);
+
+        var buyer = (await BuyerRows(1))[0];
+        Assert.Equal(HttpStatusCode.OK, (await Bid(buyer.Token, auction, 10000, "stale")).StatusCode);
+
+        var cancel = await admin.PostAsJsonAsync("/api/shop/auctions/" + auction + "/cancel", new { reason = "no longer needed", expectedBidCount = seenBids });
+        Assert.Equal(HttpStatusCode.Conflict, cancel.StatusCode);
+
+        // nothing partial: still live, bid kept, item still listed, no audit, no email
+        Assert.Equal("live", await State(auction));
+        Assert.Equal(1, await BidCount(auction));
+        Assert.Equal("listed", await db.Data.Scalar<string>(
+            "SELECT i.State FROM philmart.Item_Item i JOIN philmart.List_Listing l ON l.ItemID = i.ID WHERE l.ID = @l", TestData.P("@l", auction)));
+        Assert.Equal(0, await CancelAudits(auction));
+        Assert.Equal(0, await db.Data.Scalar<int>("SELECT COUNT(*) FROM philmart.Sys_EmailMessage WHERE BuyerID = @b AND TemplateCode = 'EML-015'", TestData.P("@b", buyer.Id)));
+
+        // the bidder still leads
+        Assert.Equal(HttpStatusCode.OK, (await Bid(buyer.Token, auction, 10500, "still-open")).StatusCode);
+    }
+
+    // V24-AUC-02, the true race: cancel and bid sent together. Either order is
+    // fine, but the end state has to match exactly one of them.
+    [Fact]
+    [Trait("BR", "BR-13-R07")]
+    [Trait("Decision", "D016")]
+    [Trait("Query", "V24-AUC-02")]
+    public async Task A_cancellation_racing_a_bid_ends_in_one_consistent_state()
+    {
+        for (int round = 0; round < 5; round++)
+        {
+            var shop = await db.Data.CreateShop();
+            Guid auction = await db.Data.CreateAuction(shop, start.AddDays(1));
+            var admin = db.Api.As(await db.Api.SignIn(shop.AdminEmail, TestData.Password, "shop"));
+            var buyer = (await BuyerRows(1))[0];
+
+            var cancelTask = admin.PostAsJsonAsync("/api/shop/auctions/" + auction + "/cancel", new { reason = "race", expectedBidCount = 0 });
+            var bidTask = Bid(buyer.Token, auction, 10000, "race-cancel-" + round);
+            var cancel = await cancelTask;
+            var bid = await bidTask;
+
+            if (cancel.StatusCode == HttpStatusCode.NoContent)
+            {
+                Assert.NotEqual(HttpStatusCode.OK, bid.StatusCode);
+                Assert.Equal("cancelled", await State(auction));
+                Assert.Equal(0, await BidCount(auction));
+                Assert.Equal(1, await CancelAudits(auction));
+            }
+            else
+            {
+                Assert.Equal(HttpStatusCode.Conflict, cancel.StatusCode);
+                Assert.Equal(HttpStatusCode.OK, bid.StatusCode);
+                Assert.Equal("live", await State(auction));
+                Assert.Equal(1, await BidCount(auction));
+                Assert.Equal(0, await CancelAudits(auction));
+            }
+        }
+    }
+
+    // V24-AUC-03: the same cancellation sent several times at once
+    [Fact]
+    [Trait("BR", "BR-13-R07")]
+    [Trait("Decision", "D012")]
+    [Trait("Query", "V24-AUC-03")]
+    public async Task Duplicate_cancellations_at_once_cancel_once()
+    {
+        var shop = await db.Data.CreateShop();
+        Guid auction = await db.Data.CreateAuction(shop, start.AddDays(1));
+        var admin = db.Api.As(await db.Api.SignIn(shop.AdminEmail, TestData.Password, "shop"));
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ =>
+            admin.PostAsJsonAsync("/api/shop/auctions/" + auction + "/cancel", new { reason = "duplicate click", expectedBidCount = 0 })));
+
+        Assert.Equal(1, results.Count(x => x.StatusCode == HttpStatusCode.NoContent));
+        Assert.All(results.Where(x => x.StatusCode != HttpStatusCode.NoContent), x => Assert.Equal(HttpStatusCode.UnprocessableEntity, x.StatusCode));
+        Assert.Equal("cancelled", await State(auction));
+        Assert.Equal(1, await CancelAudits(auction));
+        Assert.Equal("ready_to_list", await db.Data.Scalar<string>(
+            "SELECT i.State FROM philmart.Item_Item i JOIN philmart.List_Listing l ON l.ItemID = i.ID WHERE l.ID = @l", TestData.P("@l", auction)));
+
+        // and a late repeat changes nothing
+        var late = await admin.PostAsJsonAsync("/api/shop/auctions/" + auction + "/cancel", new { reason = "late repeat" });
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, late.StatusCode);
+        Assert.Equal("duplicate click", await db.Data.Scalar<string>("SELECT CancellationReason FROM philmart.List_Listing WHERE ID = @l", TestData.P("@l", auction)));
+        Assert.Equal(1, await CancelAudits(auction));
+    }
+
+    // V24-AUC-03, exceptional route: duplicates must not send EML-015 twice
+    [Fact]
+    [Trait("BR", "BR-13-R07")]
+    [Trait("Decision", "D016")]
+    [Trait("Query", "V24-AUC-03")]
+    public async Task Duplicate_exceptional_cancellations_notify_each_bidder_once()
+    {
+        var shop = await db.Data.CreateShop();
+        Guid auction = await db.Data.CreateAuction(shop, start.AddDays(1));
+        var buyers = await BuyerRows(2);
+        await Bid(buyers[0].Token, auction, 10000, "dup-a");
+        await Bid(buyers[1].Token, auction, 10500, "dup-b");
+        var admin = db.Api.As(await db.Api.SignIn(shop.AdminEmail, TestData.Password, "shop"));
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ =>
+            admin.PostAsJsonAsync("/api/shop/auctions/" + auction + "/cancel", new { reason = "Found damaged", itemMissingOrDamaged = true, expectedBidCount = 2 })));
+
+        Assert.Equal(1, results.Count(x => x.StatusCode == HttpStatusCode.NoContent));
+        Assert.Equal("cancelled", await State(auction));
+        Assert.Equal(2, await BidCount(auction));
+        Assert.Equal(1, await CancelAudits(auction));
+        foreach (var b in buyers)
+        {
+            Assert.Equal(1, await db.Data.Scalar<int>("SELECT COUNT(*) FROM philmart.Sys_EmailMessage WHERE BuyerID = @b AND TemplateCode = 'EML-015'", TestData.P("@b", b.Id)));
+        }
+    }
+
+    // V49-AUC-08: the Shop's list, the Auction Management screen, the public
+    // item page and the sale all tell the same story, live and after the close
+    [Fact]
+    [Trait("BR", "BR-13-R04")]
+    [Trait("BR", "BR-13-R08")]
+    [Trait("Query", "V49-AUC-08")]
+    public async Task Auction_management_agrees_with_every_other_view()
+    {
+        var shop = await db.Data.CreateShop();
+        Guid auction = await db.Data.CreateAuction(shop, start.AddMinutes(30), startMinor: 10000, incrementMinor: 500);
+        var buyers = await BuyerRows(2);
+        Assert.Equal(HttpStatusCode.OK, (await Bid(buyers[0].Token, auction, 10000, "m1")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Bid(buyers[1].Token, auction, 10500, "m2")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Bid(buyers[0].Token, auction, 11500, "m3")).StatusCode);
+
+        var admin = db.Api.As(await db.Api.SignIn(shop.AdminEmail, TestData.Password, "shop"));
+
+        var listRow = (await admin.GetFromJsonAsync<JsonElement>("/api/shop/auctions"))
+            .EnumerateArray().Single(x => x.GetProperty("listingID").GetGuid() == auction);
+        var detail = await admin.GetFromJsonAsync<JsonElement>("/api/shop/auctions/" + auction);
+        var publicView = await db.Api.CreateClient().GetFromJsonAsync<JsonElement>("/api/marketplace/listings/" + auction);
+
+        // current price and bid count
+        Assert.Equal(11500, listRow.GetProperty("currentBidMinor").GetInt64());
+        Assert.Equal(11500, detail.GetProperty("currentBidMinor").GetInt64());
+        Assert.Equal(11500, publicView.GetProperty("currentBidMinor").GetInt64());
+        Assert.Equal(3, listRow.GetProperty("bidCount").GetInt32());
+        Assert.Equal(3, detail.GetProperty("bidCount").GetInt32());
+        Assert.Equal(3, publicView.GetProperty("bids").GetArrayLength());
+        Assert.Equal(3, await BidCount(auction));
+        Assert.Equal("live", detail.GetProperty("state").GetString());
+        Assert.Equal(listRow.GetProperty("endsAt").GetDateTimeOffset(), detail.GetProperty("endsAt").GetDateTimeOffset());
+
+        // ranking: highest first, one leader, same bidder number for the same buyer
+        var bids = detail.GetProperty("bids").EnumerateArray().ToList();
+        Assert.Equal(new long[] { 11500, 10500, 10000 }, bids.Select(x => x.GetProperty("amountMinor").GetInt64()));
+        Assert.Equal(new[] { 1, 2, 3 }, bids.Select(x => x.GetProperty("rank").GetInt32()));
+        Assert.Single(bids, x => x.GetProperty("leading").GetBoolean());
+        Assert.True(bids[0].GetProperty("leading").GetBoolean());
+        Assert.Equal(bids[0].GetProperty("bidder").GetString(), bids[2].GetProperty("bidder").GetString());
+        Assert.NotEqual(bids[0].GetProperty("bidder").GetString(), bids[1].GetProperty("bidder").GetString());
+
+        // the same sequence numbers as the public bid history, and no buyer identity
+        Assert.Equal(
+            publicView.GetProperty("bids").EnumerateArray().Select(x => x.GetProperty("sequenceNo").GetInt64()).OrderBy(x => x),
+            bids.Select(x => x.GetProperty("sequenceNo").GetInt64()).OrderBy(x => x));
+        string raw = detail.GetRawText();
+        Assert.DoesNotContain(buyers[0].Id.ToString(), raw, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("@test.local", raw, StringComparison.OrdinalIgnoreCase);
+
+        // activity: opened, then one entry per bid in order
+        var activity = detail.GetProperty("activity").EnumerateArray().Select(x => x.GetProperty("action").GetString()).ToList();
+        Assert.Equal(new[] { "auction.live", "bid.placed", "bid.placed", "bid.placed" }, activity);
+
+        // close it and look again
+        await db.Clock.Advance(TimeSpan.FromMinutes(31));
+        await Sweep();
+
+        listRow = (await admin.GetFromJsonAsync<JsonElement>("/api/shop/auctions"))
+            .EnumerateArray().Single(x => x.GetProperty("listingID").GetGuid() == auction);
+        detail = await admin.GetFromJsonAsync<JsonElement>("/api/shop/auctions/" + auction);
+
+        Assert.Equal("sold", listRow.GetProperty("state").GetString());
+        Assert.Equal("sold", detail.GetProperty("state").GetString());
+        Assert.Equal(11500, listRow.GetProperty("soldPriceMinor").GetInt64());
+        Assert.Equal(11500, detail.GetProperty("soldPriceMinor").GetInt64());
+        Assert.Equal(11500, await db.Data.Scalar<long>("SELECT SalePriceMinor FROM philmart.Sale_Transaction WHERE ListingID = @l", TestData.P("@l", auction)));
+        Assert.Equal(buyers[0].Id, await db.Data.Scalar<Guid>("SELECT BuyerID FROM philmart.Sale_Transaction WHERE ListingID = @l", TestData.P("@l", auction)));
+
+        bids = detail.GetProperty("bids").EnumerateArray().ToList();
+        Assert.True(bids[0].GetProperty("winning").GetBoolean());
+        Assert.Single(bids, x => x.GetProperty("winning").GetBoolean());
+        Assert.Equal("auction.closed", detail.GetProperty("activity").EnumerateArray().Last().GetProperty("action").GetString());
+        Assert.Contains("R 115.00", detail.GetProperty("activity").EnumerateArray().Last().GetProperty("description").GetString());
+    }
+
+    // V49-AUC-08 for the other outcomes: unsold and cancelled show up the same everywhere
+    [Fact]
+    [Trait("BR", "BR-13-R06")]
+    [Trait("BR", "BR-13-R07")]
+    [Trait("Query", "V49-AUC-08")]
+    public async Task Auction_management_shows_unsold_and_cancelled_outcomes()
+    {
+        var shop = await db.Data.CreateShop();
+        Guid unsold = await db.Data.CreateAuction(shop, start.AddMinutes(10));
+        Guid cancelled = await db.Data.CreateAuction(shop, start.AddDays(1));
+        var admin = db.Api.As(await db.Api.SignIn(shop.AdminEmail, TestData.Password, "shop"));
+
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await admin.PostAsJsonAsync("/api/shop/auctions/" + cancelled + "/cancel", new { reason = "Withdrawn by owner", expectedBidCount = 0 })).StatusCode);
+
+        await db.Clock.Advance(TimeSpan.FromMinutes(11));
+        await Sweep();
+
+        var u = await admin.GetFromJsonAsync<JsonElement>("/api/shop/auctions/" + unsold);
+        Assert.Equal("unsold", u.GetProperty("state").GetString());
+        Assert.Equal("ready_to_list", u.GetProperty("itemState").GetString());
+        Assert.Equal(0, u.GetProperty("bidCount").GetInt32());
+        Assert.Equal("auction.closed", u.GetProperty("activity").EnumerateArray().Last().GetProperty("action").GetString());
+
+        var c = await admin.GetFromJsonAsync<JsonElement>("/api/shop/auctions/" + cancelled);
+        Assert.Equal("cancelled", c.GetProperty("state").GetString());
+        Assert.Equal("Withdrawn by owner", c.GetProperty("cancellationReason").GetString());
+        var last = c.GetProperty("activity").EnumerateArray().Last();
+        Assert.Equal("auction.cancelled", last.GetProperty("action").GetString());
+        Assert.Equal("Withdrawn by owner", last.GetProperty("reason").GetString());
+    }
+
+    private Task<int> CancelAudits(Guid listing)
+    {
+        return db.Data.Scalar<int>("SELECT COUNT(*) FROM philmart.Sys_AuditEvent WHERE EntityID = @l AND Action IN ('auction.cancelled', 'auction.cancelled_with_bids')",
+            TestData.P("@l", listing.ToString()));
+    }
+
     [Fact]
     [Trait("BR", "BR-13-R09")]
     [Trait("Decision", "D068")]

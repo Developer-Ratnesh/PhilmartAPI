@@ -5,6 +5,7 @@ import { BuyerOnly } from "@/components/account/BuyerOnly";
 import { ProfileTabs } from "@/components/account/ProfileTabs";
 import { ShippingMethodsEditor, withPreferred } from "@/components/account/ShippingMethodsEditor";
 import { AccountShell } from "@/components/layout/AccountShell";
+import { PhysicalAddressFields } from "@/components/account/PhysicalAddressFields";
 import { Button, ErrorNote, Field, inputStyle, Notice, Panel } from "@/components/ui/Form";
 import { api, errorText, type BuyerProfile, type DeliveryOption, type ShippingPreference } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -189,8 +190,6 @@ function AddressPanel({ profile, onSaved }: { profile: BuyerProfile; onSaved: ()
     }
   }
 
-  const set = (key: keyof typeof address) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setAddress((a) => ({ ...a, [key]: e.target.value }));
 
   return (
     <Panel>
@@ -201,23 +200,7 @@ function AddressPanel({ profile, onSaved }: { profile: BuyerProfile; onSaved: ()
         <ErrorNote message={error} />
         {saved && <Notice>Saved. Your next purchase will use these details.</Notice>}
 
-        <Field label="Street address" htmlFor="line1">
-          <input id="line1" required value={address.addressLine1} onChange={set("addressLine1")} style={inputStyle} />
-        </Field>
-        <Field label="Suburb or complex (optional)" htmlFor="line2">
-          <input id="line2" value={address.addressLine2} onChange={set("addressLine2")} style={inputStyle} />
-        </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="City" htmlFor="city">
-            <input id="city" required value={address.city} onChange={set("city")} style={inputStyle} />
-          </Field>
-          <Field label="Postal code" htmlFor="postal">
-            <input id="postal" value={address.postalCode} onChange={set("postalCode")} style={inputStyle} />
-          </Field>
-        </div>
-        <Field label="Province" htmlFor="province">
-          <input id="province" value={address.province} onChange={set("province")} style={inputStyle} />
-        </Field>
+        <PhysicalAddressFields value={address} onChange={setAddress} />
 
         <h3 className="mb-2 mt-2 font-display text-base font-semibold" style={{ color: "var(--text-primary)" }}>
           Delivery methods

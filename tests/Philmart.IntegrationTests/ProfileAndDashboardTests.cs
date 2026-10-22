@@ -33,7 +33,7 @@ public class ProfileAndDashboardTests(DatabaseFixture db)
             preferred = preferred.Contains(m.GetProperty("id").GetGuid()),
         }).ToList();
 
-        object Body(List<object> prefs) => new { addressLine1 = "2 New Road", city = "Durban", postalCode = "4001", countryCode = "ZA", shippingPreferences = prefs };
+        object Body(List<object> prefs) => new { addressLine1 = "2 New Road", city = "Durban", province = "KwaZulu-Natal", postalCode = "4001", countryCode = "ZA", shippingPreferences = prefs };
 
         // only one may be preferred
         Guid first = options[0].GetProperty("id").GetGuid();
@@ -69,7 +69,7 @@ public class ProfileAndDashboardTests(DatabaseFixture db)
         Assert.Equal(HttpStatusCode.UnprocessableEntity, (await client.PutAsJsonAsync("/api/account/profile/mobile", new { mobile = "call me" })).StatusCode);
 
         var address = await client.PutAsJsonAsync("/api/account/profile/address",
-            new { addressLine1 = "2 New Road", city = "Durban", postalCode = "4001", countryCode = "ZA", shippingPreferences = Array.Empty<object>() });
+            new { addressLine1 = "2 New Road", city = "Durban", province = "KwaZulu-Natal", postalCode = "4001", countryCode = "ZA", shippingPreferences = Array.Empty<object>() });
         Assert.Equal(HttpStatusCode.NoContent, address.StatusCode);
 
         var after = await client.GetFromJsonAsync<JsonElement>("/api/account/profile");

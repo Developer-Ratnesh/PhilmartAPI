@@ -31,6 +31,10 @@ public class ExceptionHandlingMiddleware(
 
             await WriteError(context, HttpStatusCode.Forbidden, ex.Message, null);
         }
+        catch (ConflictException ex)
+        {
+            await WriteError(context, HttpStatusCode.Conflict, ex.Message, null);
+        }
         catch (BusinessRuleViolationException ex)
         {
             await WriteError(

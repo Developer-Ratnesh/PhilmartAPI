@@ -251,6 +251,45 @@ export type ShopAuction = {
   cancellationReason: string | null;
 };
 
+// SCR-SHP-006.1 Auction Management
+export type AuctionManagement = {
+  listingID: string;
+  itemID: string;
+  reference: string;
+  itemReference: string;
+  title: string;
+  itemState: string;
+  sellerName: string | null;
+  state: string;
+  startingPriceMinor: number;
+  reservePriceMinor: number | null;
+  bidIncrementMinor: number;
+  currentBidMinor: number | null;
+  bidCount: number;
+  startsAt: string;
+  endsAt: string;
+  extensionCount: number;
+  soldPriceMinor: number | null;
+  cancellationReason: string | null;
+  closedAt: string | null;
+  serverNow: string;
+  bids: AuctionBid[];
+  activity: AuctionActivity[];
+};
+
+export type AuctionBid = {
+  sequenceNo: number;
+  rank: number;
+  bidder: string;
+  amountMinor: number;
+  placedAt: string;
+  leading: boolean;
+  winning: boolean;
+  extendedClose: boolean;
+};
+
+export type AuctionActivity = { at: string; action: string; description: string; reason: string | null };
+
 export type ReadyItem = { itemID: string; reference: string; title: string; sellerMinimumPriceMinor: number | null };
 
 export type InviteResult = { shopUserID: string; invitationLink: string; emailSent: boolean };
@@ -560,12 +599,15 @@ export const api = {
 
     auctions: () => request<ShopAuction[]>("/api/shop/auctions", { cache: "no-store" }),
 
+    auction: (listingId: string) => request<AuctionManagement>(`/api/shop/auctions/${listingId}`, { cache: "no-store" }),
+
     readyItems: () => request<ReadyItem[]>("/api/shop/auctions/ready-items", { cache: "no-store" }),
 
     createAuction: (body: CreateAuction) => request<string>("/api/shop/auctions", post(body)),
 
-    cancelAuction: (listingId: string, reason: string, itemMissingOrDamaged: boolean) =>
-      request<void>(`/api/shop/auctions/${listingId}/cancel`, post({ reason, itemMissingOrDamaged })),
+    // expectedBidCount: the count the user confirmed; the server refuses (409) if it changed
+    cancelAuction: (listingId: string, reason: string, itemMissingOrDamaged: boolean, expectedBidCount: number) =>
+      request<void>(`/api/shop/auctions/${listingId}/cancel`, post({ reason, itemMissingOrDamaged, expectedBidCount })),
   },
 
   marketplace: {

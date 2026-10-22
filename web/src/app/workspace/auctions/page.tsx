@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
+import { CancelAuctionDialog } from "@/components/workspace/CancelAuctionDialog";
 import { Button, ErrorNote, Field, inputStyle, Notice } from "@/components/ui/Form";
 import { api, errorText, formatMoney, type ReadyItem, type ShopAuction } from "@/lib/api";
 import { hasPermission, useSession } from "@/lib/session";
@@ -71,7 +72,11 @@ export default function AuctionsPage() {
           <tbody>
             {auctions.map((a) => (
               <tr key={a.listingID} style={{ borderTop: "1px solid var(--border-subtle)", color: "var(--text-primary)" }}>
-                <td className="px-4 py-3 font-mono text-xs">{a.reference}</td>
+                <td className="px-4 py-3 font-mono text-xs">
+                  <Link href={`/workspace/auctions/${a.listingID}`} className="font-semibold hover:underline" style={{ color: "var(--accent-info)" }}>
+                    {a.reference}
+                  </Link>
+                </td>
                 <td className="px-4 py-3">
                   {a.state === "live" ? <Link href={`/item/${a.listingID}`} className="hover:underline">{a.title}</Link> : a.title}
                 </td>
@@ -84,6 +89,9 @@ export default function AuctionsPage() {
                 <td className="px-4 py-3">{a.bidCount}</td>
                 <td className="px-4 py-3 text-xs">{new Date(a.endsAt).toLocaleString("en-ZA")}</td>
                 <td className="px-4 py-3 text-xs">
+                  <Link href={`/workspace/auctions/${a.listingID}`} className="mr-3 font-semibold hover:underline" style={{ color: "var(--accent-info)" }}>
+                    Manage
+                  </Link>
                   {(a.state === "live" || a.state === "scheduled") && (a.bidCount === 0 || canCancelWithBids) && (
                     <button type="button" className="font-semibold hover:underline" style={{ color: "var(--accent-danger)" }} onClick={() => setCancelling(a)}>
                       Cancel
@@ -115,9 +123,14 @@ export default function AuctionsPage() {
       )}
 
       {cancelling && (
-        <CancelDialog
+        <CancelAuctionDialog
           auction={cancelling}
           onClose={() => setCancelling(null)}
+          onStale={(message) => {
+            setCancelling(null);
+            setError(message);
+            reload();
+          }}
           onDone={() => {
             setCancelling(null);
             setNotice(cancelling.bidCount > 0 ? "Auction cancelled. Bidders have been notified and their bids kept on record." : "Auction cancelled.");
@@ -231,63 +244,6 @@ function CreateDialog({ items, onClose, onSaved }: { items: ReadyItem[]; onClose
         <div className="grid grid-cols-2 gap-4">
           <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button disabled={busy || !itemId}>Schedule auction</Button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function CancelDialog({ auction, onClose, onDone }: { auction: ShopAuction; onClose: () => void; onDone: () => void }) {
-  const [reason, setReason] = useState("");
-  const [missing, setMissing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const hasBids = auction.bidCount > 0;
-
-  async function cancel(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await api.shop.cancelAuction(auction.listingID, reason, missing);
-      onDone();
-    } catch (err) {
-      setError(errorText(err));
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4" style={{ background: "rgb(15 23 42 / 0.5)" }} role="dialog" aria-modal="true">
-      <form onSubmit={cancel} className="mt-10 w-full max-w-lg p-6" style={{ background: "var(--surface-card)", borderRadius: "var(--radius-card)" }}>
-        <h2 className="mb-2 font-display text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
-          {hasBids ? "Cancel an auction with bids" : "Cancel auction"}
-        </h2>
-        <p className="mb-4 text-sm" style={{ color: "var(--text-secondary)" }}>
-          {auction.reference} · {auction.title}
-        </p>
-
-        <ErrorNote message={error} />
-
-        {hasBids && (
-          <Notice>
-            This auction has {auction.bidCount} {auction.bidCount === 1 ? "bid" : "bids"}. Cancelling is only for exceptional cases such as the item being missing or
-            damaged. Every bid stays on record and the bidders are told (D016).
-          </Notice>
-        )}
-
-        <Field label="Reason" htmlFor="reason">
-          <textarea id="reason" required rows={3} value={reason} onChange={(e) => setReason(e.target.value)} style={inputStyle} />
-        </Field>
-
-        <label className="mb-5 flex items-center gap-2 text-sm" style={{ color: "var(--text-primary)" }}>
-          <input type="checkbox" checked={missing} onChange={(e) => setMissing(e.target.checked)} />
-          The item is missing or damaged
-        </label>
-
-        <div className="grid grid-cols-2 gap-4">
-          <Button type="button" variant="secondary" onClick={onClose}>Keep the auction</Button>
-          <Button variant="danger" disabled={busy || !reason.trim()}>Cancel auction</Button>
         </div>
       </form>
     </div>

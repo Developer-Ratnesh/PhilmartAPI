@@ -1,3 +1,4 @@
+using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Philmart.Application.Abstractions;
@@ -7,6 +8,9 @@ namespace Philmart.Infrastructure.Email;
 
 // The email.dispatch job. The queued row is the record, sending is just output,
 // so a failed send leaves the row there with the reason and tries again.
+// Retries are spaced out from when the email was queued (at once, then 1, 5,
+// 30 and 120 minutes), so a mail host that throttles us for a while (known
+// issue KI-02, 'Sender is throttled') doesn't use up all five attempts at once.
 public class EmailDispatcher(
     IDbContextFactory<PhilmartContext> contextFactory,
     IEmailSender sender,
@@ -38,15 +42,18 @@ public class EmailDispatcher(
                                          UPDATE TOP ({batchSize}) philmart.Sys_EmailMessage WITH (ROWLOCK, READPAST)
                                          SET Attempts = Attempts + 1
                                          OUTPUT inserted.ID, inserted.ToAddress, inserted.Subject, inserted.Body, inserted.Attempts INTO @claimed
-                                         WHERE DeliveryState = 'queued' AND Attempts < {MaxAttempts};
+                                         WHERE DeliveryState = 'queued' AND Attempts < {MaxAttempts}
+                                           AND philmart.ServerNow() >= DATEADD(MINUTE, CASE Attempts WHEN 0 THEN 0 WHEN 1 THEN 1 WHEN 2 THEN 5 WHEN 3 THEN 30 ELSE 120 END, QueuedAt);
 
                                          SELECT ID, ToAddress, Subject, Body, Attempts FROM @claimed")
                 .ToListAsync(cancellationToken);
 
             int sent = 0;
 
-            foreach (var email in batch)
+            for (int i = 0; i < batch.Count; i++)
             {
+                var email = batch[i];
+
                 try
                 {
                     await sender.Send(email.ToAddress, email.Subject, email.Body, cancellationToken);
@@ -71,6 +78,22 @@ public class EmailDispatcher(
                         cancellationToken);
 
                     logger.LogWarning(ex, "Email {EmailID} to {To} failed, attempt {Attempt}", email.ID, email.ToAddress, email.Attempts);
+
+                    // The mail server refused us, not this one address (throttled,
+                    // down, login failed). The rest would fail the same way, so give
+                    // their attempt back and leave them for the next run.
+                    if (ex is SmtpException && ex is not SmtpFailedRecipientException)
+                    {
+                        var rest = batch.Skip(i + 1).Select(x => x.ID).ToList();
+                        foreach (Guid id in rest)
+                        {
+                            await context.Database.ExecuteSqlAsync(
+                                $"UPDATE philmart.Sys_EmailMessage SET Attempts = Attempts - 1 WHERE ID = {id} AND DeliveryState = 'queued'",
+                                cancellationToken);
+                        }
+
+                        break;
+                    }
                 }
             }
 

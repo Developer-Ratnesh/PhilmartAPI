@@ -5,6 +5,9 @@ public interface IAuctionService
 {
     Task<List<ShopAuctionDTO>> List(CancellationToken cancellationToken = default);
 
+    // SCR-SHP-006.1. Not found for another Shop's auction.
+    Task<AuctionManagementDTO> Get(Guid listingId, CancellationToken cancellationToken = default);
+
     // Ready to List stock, what an auction can be created from
     Task<List<ReadyItemDTO>> ReadyItems(CancellationToken cancellationToken = default);
 

@@ -19,7 +19,7 @@ tests.
 | Authoritative close | Built, tested | `AuctionCloser`, `P_List_Auction_Close` |
 | Soft close | Built, tested | `P_List_Bid_Place`, `AuctionTests` |
 | Outage and recovery | Built, tested | sweep on startup and every 5 s |
-| Relevant tests | 94 integration, 24 unit, all passing, plus the evidence run in `tools/evidence` (checklist, N01-N30, B01-B14) | `tests/`, `tools/evidence` |
+| Relevant tests | 113 integration, 24 unit, all passing, plus the evidence run in `tools/evidence` (checklist, N01-N30, B01-B14) | `tests/`, `tools/evidence` |
 | Emails actually sent | Built, tested. Every email uses one PHILMART layout with the logo, HTML and plain text | `EmailJob`, `EmailDispatcher`, `EmailLayout`, `EmailDispatchTests`, `EmailLayoutTests` |
 | Staging build | Deployed | `db_acd9e3_philmart` on site4now (001 to 016 once this release is uploaded), API site4, website site3 and philmart.co.za. `GET /api/version` reports the commit |
 | Schedule A6 technical proof | Built, tested | invoice, Shop-recorded payment, linked reversal: `/workspace/sales`, `InvoiceService`, `InvoiceTests` |
@@ -95,13 +95,14 @@ Every test carries its BR ID as an xUnit trait, so
 | R04 transactionally safe | Done | `Simultaneous_bids...`, `Racing_bids_keep_a_clean_order` |
 | R05 the clause 9.2 test list | Done | simultaneous, duplicate, ordering, last-second, soft close, simultaneous closes, outage and recovery |
 | R06 unsold returns to Ready to List, listing read-only (D012) | Done | `After_an_outage_one_sweep_closes_everything_correctly` |
-| R07 exceptional cancellation with bids (D016) | Done | `Cancelling_with_bids_is_exceptional_and_keeps_the_bids` |
+| R07 exceptional cancellation with bids (D016) | Done | `Cancelling_with_bids_is_exceptional_and_keeps_the_bids`, plus the stale and duplicate cases `A_cancellation_confirmed_before_a_bid_arrived_is_refused`, `A_cancellation_racing_a_bid_ends_in_one_consistent_state`, `Duplicate_cancellations_at_once_cancel_once`, `Duplicate_exceptional_cancellations_notify_each_bidder_once` |
 | R08 EML-012 on a win | Done (queued) | `Close_picks_the_highest_bid...` |
 | R09 outbid throttle, email only (D068) | Done | `Outbid_emails_are_throttled_but_bids_never_are` |
 | R10 EML-014 not built, EML-015 on exceptional cancel | Done | tests check both |
 | R11 bid-bearing auction runs to end despite deactivation (D033) | Done | bidding stays open when bids exist |
 | R12 effective minimum not below Seller Minimum | Done | BR-03-R06 test, plus a check when creating |
 | R13 invalid outcome is Critical | Covered | close tests |
+| SCR-SHP-006.1 Auction Management (overview, bids, activity) | Done (m2-rc3) | `/workspace/auctions/{id}`, `Auction_management_agrees_with_every_other_view`, `Another_shops_auction_management_cant_be_read_or_changed` |
 | Auction events, bulk auctions (SCR-SHP-007 and bulk screens) | **Not done** | BR-14 is Milestone 4, bulk upload is BR-11 (Milestone 3) |
 
 ## Changes to the controlled schema, raised with the Client
@@ -123,7 +124,7 @@ Every test carries its BR ID as an xUnit trait, so
 | # | Severity | Issue |
 |---|---|---|
 | 1 | Medium | philmart.co.za and staging are the same site and database. Separate them before production. |
-| 2 | Medium | Staging sends mail from info@philmart.co.za, but the domain has no DKIM signing (SPF -all, DMARC p=reject), so mail can land in spam or be refused. Fix in the hosting mail panel / DNS. Locally, with no `Email:Host`, emails wait in `Sys_EmailMessage` and PINs go to the API log. |
+| 2 | Medium | Staging sends mail from info@philmart.co.za, but the domain has no DKIM signing (checked 22 Oct: SPF -all, DMARC now p=none, no DKIM record), so mail can land in spam. The hosting mail server also throttles bursts ('Sender is throttled'); since m2-rc3 retries are spaced over about 2.5 hours and a throttle pauses the queue instead of using up every email's attempts. Fix DKIM in the hosting mail panel / DNS. Locally, with no `Email:Host`, emails wait in `Sys_EmailMessage` and PINs go to the API log. |
 | 3 | Low | The sign-in PIN, Shop user invitation and support copy aren't in the controlled email catalogue, so they're sent straight over SMTP and not stored. That also keeps the sign-in PIN out of the database. |
 | 4 | Medium | All email templates in the seed have no subject or body. The code uses plain fallback wording that follows each rule until the Client supplies it. |
 | 5 | Medium | Legal documents have no published versions in the controlled seed. The demo seed publishes placeholder text, which is what the staging database has now. The real wording has to replace it before production. |
@@ -177,3 +178,25 @@ Every demo login uses the password `Philmart-dev-1`:
 | PHILMART admin | `/admin/login` | admin@philmart.test (on staging the password is `admin@123`) |
 
 One demo auction ends 10 minutes after the seed is loaded, so you can watch it close.
+
+## Client evidence queries of 22 October 2026 (release m2-rc3)
+
+The client's 16 outstanding items. Each new test carries the matrix ID as a
+trait: `dotnet test --filter "Query=V38-REG-02"`. The auction ones sit in
+`AuctionTests` and `ShopIsolationTests`.
+
+| Matrix ID | Outcome |
+|---|---|
+| V24-AUC-02 | Defect fixed. A cancellation now carries the bid count the Shop confirmed; if a bid arrived since, it's refused (409) and nothing changes. |
+| V24-AUC-03 | Tests added. Concurrent duplicates: one cancellation, one audit row, one EML-015 per bidder. |
+| V24-AUC-08 | Test added for the exceptional (with-bids) route across Shops. |
+| V31-LST-09 | Sale record denial is existing N16. Listing withdrawal is BR-12 (M3). |
+| V38-REG-02 | Tests added: registration PIN expiry, five-try limit, reuse, resend, purpose. |
+| V38-REG-04 | Defect fixed. Province, postal code and country are now required by the server, as SCR-PUB-014.4 shows. |
+| V38-REG-06 | Two defects fixed. Concurrent Create Account returned 500 for the loser; a repeated final step wrote acceptance rows and the welcome email twice. |
+| V38-PRF-02 | Test added. The Buyer Number field on SCR-PUB-006.1 is BR-04 (M3) and isn't in the controlled schema. |
+| V41-MKT-02 | Test added for combined filters, counts, zero results and clearing. |
+| V41-MKT-04 | Defects fixed. Two sorts had no tie-breaker, so pages could repeat or skip listings; page and view are now kept in the URL; the storefront pages instead of stopping at 50. |
+| V46-BID-01/02/03 | SCR-PUB-005 Active Bids is BR-04-R02, Milestone 3 (T18). |
+| V49-AUC-08/09 | SCR-SHP-006.1 built (BR-13, M2) with coherence and cross-Shop tests. |
+| V55-EXC-02 | SCR-SHP-RPT-001 is BR-24, Milestone 4 (T35). |

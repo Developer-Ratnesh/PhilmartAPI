@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PublicFooter, PublicHeader } from "@/components/layout/PublicHeader";
+import { PhysicalAddressFields } from "@/components/account/PhysicalAddressFields";
 import { Button, ErrorNote, Field, inputStyle, Notice, Panel, PinInput, StepHeading } from "@/components/ui/Form";
 import { api, errorText, type DeliveryOption, type LegalDocument, type ShippingPreference } from "@/lib/api";
 import { saveSession, updateUser, useSession } from "@/lib/session";
@@ -338,31 +339,13 @@ function AddressStep({ onBack, onDone }: { onBack: () => void; onDone: () => voi
     }
   }
 
-  const set = (key: keyof typeof address) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setAddress((a) => ({ ...a, [key]: e.target.value }));
 
   return (
     <Panel>
       <form onSubmit={save}>
         <ErrorNote message={error} />
 
-        <Field label="Street address" htmlFor="line1">
-          <input id="line1" required value={address.addressLine1} onChange={set("addressLine1")} style={inputStyle} />
-        </Field>
-        <Field label="Suburb or complex (optional)" htmlFor="line2">
-          <input id="line2" value={address.addressLine2} onChange={set("addressLine2")} style={inputStyle} />
-        </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="City" htmlFor="city">
-            <input id="city" required value={address.city} onChange={set("city")} style={inputStyle} />
-          </Field>
-          <Field label="Postal code" htmlFor="postal">
-            <input id="postal" value={address.postalCode} onChange={set("postalCode")} style={inputStyle} />
-          </Field>
-        </div>
-        <Field label="Province" htmlFor="province">
-          <input id="province" value={address.province} onChange={set("province")} style={inputStyle} />
-        </Field>
+        <PhysicalAddressFields value={address} onChange={setAddress} />
 
         <h3 className="mb-2 mt-6 font-display text-base font-semibold" style={{ color: "var(--text-primary)" }}>
           Shipping preferences

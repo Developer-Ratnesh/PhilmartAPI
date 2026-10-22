@@ -28,29 +28,92 @@ public class EmailDispatchTests(DatabaseFixture db)
 
     [Fact]
     [Trait("BR", "BR-01-R02")]
-    public async Task A_failing_address_is_retried_then_given_up_on()
+    public async Task A_failing_address_is_retried_spaced_out_then_given_up_on()
     {
-        string to = "bounce-" + Guid.NewGuid().ToString("N") + "@test.local";
-        Guid id = await Queue(to);
+        await db.Clock.FreezeAt(DateTimeOffset.UtcNow);
+        try
+        {
+            string to = "bounce-" + Guid.NewGuid().ToString("N") + "@test.local";
+            Guid id = await Queue(to);
 
-        var sender = new FakeSender { FailFor = to };
+            var sender = new FakeSender { FailFor = to };
+            var dispatcher = new EmailDispatcher(db.ContextFactory(), sender, NullLogger<EmailDispatcher>.Instance);
+
+            await dispatcher.SendQueued(10000);
+            Assert.Equal("queued", await State(id));
+            Assert.Equal(1, await Attempts(id));
+
+            // not again straight away: the next try waits
+            await dispatcher.SendQueued(10000);
+            Assert.Equal(1, await Attempts(id));
+
+            // then 1, 5, 30 and 120 minutes after it was queued
+            foreach (int minutes in new[] { 1, 5, 30, 120 })
+            {
+                await db.Clock.FreezeAt((await QueuedAt(id)).AddMinutes(minutes));
+                await dispatcher.SendQueued(10000);
+            }
+
+            Assert.Equal(EmailDispatcher.MaxAttempts, await Attempts(id));
+            Assert.Equal("failed", await State(id));
+            Assert.NotNull(await db.Data.Scalar<string>("SELECT FailureDetail FROM philmart.Sys_EmailMessage WHERE ID = @id", TestData.P("@id", id)));
+
+            // nothing more happens to it after that
+            await db.Clock.Advance(TimeSpan.FromDays(1));
+            await dispatcher.SendQueued(10000);
+            Assert.Equal(EmailDispatcher.MaxAttempts, sender.Sent.Count(x => x == to));
+        }
+        finally
+        {
+            await db.Clock.Reset();
+        }
+    }
+
+    // E.7 / S.5: the host answered 'Sender is throttled'. That's the server, not
+    // the address, so one attempt is used and the rest of the batch waits.
+    [Fact]
+    [Trait("BR", "BR-01-R02")]
+    public async Task A_throttled_mail_server_uses_one_attempt_not_the_whole_queue()
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            await Queue("throttle-" + Guid.NewGuid().ToString("N") + "@test.local");
+        }
+
+        long before = await db.Data.Scalar<long>("SELECT ISNULL(SUM(CAST(Attempts AS BIGINT)), 0) FROM philmart.Sys_EmailMessage");
+
+        var sender = new FakeSender { Throttled = true };
         var dispatcher = new EmailDispatcher(db.ContextFactory(), sender, NullLogger<EmailDispatcher>.Instance);
+        Assert.Equal(0, await dispatcher.SendQueued(10000));
 
-        await dispatcher.SendQueued(10000);
-        Assert.Equal("queued", await State(id));
-        Assert.Equal(1, await db.Data.Scalar<int>("SELECT Attempts FROM philmart.Sys_EmailMessage WHERE ID = @id", TestData.P("@id", id)));
+        Assert.Single(sender.Sent);
+        Assert.Equal(before + 1, await db.Data.Scalar<long>("SELECT ISNULL(SUM(CAST(Attempts AS BIGINT)), 0) FROM philmart.Sys_EmailMessage"));
+        Assert.Equal(0, await db.Data.Scalar<int>("SELECT COUNT(*) FROM philmart.Sys_EmailMessage WHERE ToAddress LIKE 'throttle-%' AND DeliveryState = 'failed'"));
 
-        for (int i = 1; i < EmailDispatcher.MaxAttempts; i++)
+        // once the host lets us send again, they go (past the 1-minute wait
+        // for the one that used its attempt)
+        sender.Throttled = false;
+        await db.Clock.FreezeAt(DateTimeOffset.UtcNow.AddMinutes(2));
+        try
         {
             await dispatcher.SendQueued(10000);
         }
+        finally
+        {
+            await db.Clock.Reset();
+        }
 
-        Assert.Equal("failed", await State(id));
-        Assert.NotNull(await db.Data.Scalar<string>("SELECT FailureDetail FROM philmart.Sys_EmailMessage WHERE ID = @id", TestData.P("@id", id)));
+        Assert.Equal(0, await db.Data.Scalar<int>("SELECT COUNT(*) FROM philmart.Sys_EmailMessage WHERE ToAddress LIKE 'throttle-%' AND DeliveryState <> 'sent'"));
+    }
 
-        // nothing more happens to it after that
-        await dispatcher.SendQueued(10000);
-        Assert.Equal(EmailDispatcher.MaxAttempts, sender.Sent.Count(x => x == to));
+    private Task<int> Attempts(Guid id)
+    {
+        return db.Data.Scalar<int>("SELECT Attempts FROM philmart.Sys_EmailMessage WHERE ID = @id", TestData.P("@id", id));
+    }
+
+    private Task<DateTimeOffset> QueuedAt(Guid id)
+    {
+        return db.Data.Scalar<DateTimeOffset>("SELECT QueuedAt FROM philmart.Sys_EmailMessage WHERE ID = @id", TestData.P("@id", id));
     }
 
     [Fact]
@@ -88,6 +151,8 @@ public class EmailDispatchTests(DatabaseFixture db)
 
         public bool Configured { get; set; } = true;
 
+        public bool Throttled { get; set; }
+
         public bool IsConfigured
         {
             get { return Configured; }
@@ -96,6 +161,11 @@ public class EmailDispatchTests(DatabaseFixture db)
         public Task Send(string to, string subject, string body, CancellationToken cancellationToken = default)
         {
             Sent.Add(to);
+
+            if (Throttled)
+            {
+                throw new System.Net.Mail.SmtpException(System.Net.Mail.SmtpStatusCode.ServiceNotAvailable, "Sender is throttled");
+            }
 
             if (to == FailFor)
             {

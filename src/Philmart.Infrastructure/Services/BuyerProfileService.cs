@@ -86,10 +86,7 @@ public class BuyerProfileService(IDbContextFactory<PhilmartContext> contextFacto
     {
         Guid buyerId = RequireBuyer();
 
-        if (string.IsNullOrWhiteSpace(request.AddressLine1) || string.IsNullOrWhiteSpace(request.City))
-        {
-            throw new BusinessRuleViolationException("Enter your street address and city.");
-        }
+        PhysicalAddress.Check(request);
 
         using (var context = contextFactory.CreateDbContext())
         {

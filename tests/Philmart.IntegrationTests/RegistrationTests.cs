@@ -63,7 +63,7 @@ public class RegistrationTests(DatabaseFixture db)
         }
 
         var address = await client.PutAsJsonAsync("/api/register/address",
-            new { addressLine1 = "2 Test Road", city = "Durban", postalCode = "4001", countryCode = "ZA", shippingPreferences = prefs, outbidAlerts = true });
+            new { addressLine1 = "2 Test Road", city = "Durban", province = "KwaZulu-Natal", postalCode = "4001", countryCode = "ZA", shippingPreferences = prefs, outbidAlerts = true });
         Assert.Equal(HttpStatusCode.NoContent, address.StatusCode);
 
         var docs = await client.GetFromJsonAsync<JsonElement>("/api/register/legal");

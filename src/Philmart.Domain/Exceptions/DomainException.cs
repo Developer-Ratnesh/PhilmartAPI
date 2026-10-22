@@ -27,6 +27,15 @@ public class NotAuthorisedException : DomainException
     }
 }
 
+// the record moved on since the user looked at it, so what they confirmed no
+// longer holds. They reload and decide again.
+public class ConflictException : DomainException
+{
+    public ConflictException(string message) : base(message)
+    {
+    }
+}
+
 public class NotFoundException : DomainException
 {
     public NotFoundException(string entity, object key)

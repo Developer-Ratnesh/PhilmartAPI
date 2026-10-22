@@ -214,11 +214,15 @@ public class MarketplaceService(IDbContextFactory<PhilmartContext> contextFactor
                 return query.OrderByDescending(x => x.PriceMinor ?? x.ListBids.Max(b => (long?)b.AmountMinor) ?? x.StartingPriceMinor)
                             .ThenBy(x => x.ID);
 
+            // V41-MKT-04: every sort ends on the ID. Fixed price listings have no
+            // end, so without it they tie and a page could repeat or skip one.
             case "ending":
-                return query.OrderBy(x => x.EndsAt ?? DateTimeOffset.MaxValue);
+                return query.OrderBy(x => x.EndsAt ?? DateTimeOffset.MaxValue)
+                            .ThenBy(x => x.ID);
 
             default:
-                return query.OrderByDescending(x => x.ListedAt ?? x.CreatedAt);
+                return query.OrderByDescending(x => x.ListedAt ?? x.CreatedAt)
+                            .ThenBy(x => x.ID);
         }
     }
 
